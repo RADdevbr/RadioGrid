@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RadioGrid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0D1117;
+    --bg-elev: #161B22;
+    --bg-elev2: #1C2128;
+    --border: #30363D;
+    --accent: #00B4D8;
+    --accent-dim: #0a7fa0;
+    --text: #E6EDF3;
+    --text-dim: #8B949E;
+    --green: #2EA043;
+    --yellow: #D29922;
+    --red: #DA3633;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  button {
+    font-family: var(--sans);
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg-elev2);
+    color: var(--text);
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    transition: all .15s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); color: #04222b; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { background: #2cc8ed; color: #04222b; }
+  button.danger:hover { border-color: var(--red); color: var(--red); }
+  input[type=text] {
+    font-family: var(--mono);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 100%;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  .mono { font-family: var(--mono); }
+
+  /* ---------- Header ---------- */
+  header {
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    flex-wrap: wrap;
+  }
+  .logo { font-weight: 700; font-size: 20px; letter-spacing: -.5px; }
+  .logo .grid-dot { color: var(--accent); }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 13px; color: var(--text-dim);
+    font-family: var(--mono);
+  }
+  .status-pill .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .status-pill.paused .dot { background: var(--text-dim); box-shadow: none; }
+  .stats { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
+  .stat { font-family: var(--mono); font-size: 13px; color: var(--text-dim); }
+  .stat b { color: var(--accent); font-weight: 700; }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 24px; }
+  .privacy {
+    font-size: 12px; color: var(--text-dim); text-align: center;
+    margin-bottom: 18px; font-family: var(--mono);
+  }
+  .privacy::before { content: "🔒 "; }
+
+  section { margin-bottom: 28px; }
+  .section-title {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--text-dim); margin-bottom: 14px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+  }
+  .section-title .chev { transition: transform .2s; font-size: 10px; }
+  .section-title.collapsed .chev { transform: rotate(-90deg); }
+  .collapsible-body { transition: opacity .2s; }
+  .collapsed + .collapsible-body, .collapsible-body.hidden { display: none; }
+
+  /* ---------- Config ---------- */
+  .config-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+  .config-row { margin-bottom: 16px; }
+  .config-row label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+  .folder-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+  .folder-item { display: flex; gap: 8px; align-items: center; }
+  .folder-item button { padding: 6px 10px; }
+  .slider-row { display: flex; align-items: center; gap: 14px; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  .slider-val { font-family: var(--mono); color: var(--accent); min-width: 38px; }
+
+  /* ---------- Queues ---------- */
+  .queues-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; }
+  .queue-card {
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; animation: slideUp .3s ease-out;
+  }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .queue-card.complete { border-color: var(--green); animation: flashGreen 2s ease-out; }
+  @keyframes flashGreen { 0%,100% { box-shadow: none; } 30% { box-shadow: 0 0 0 2px var(--green); } }
+  .queue-card.conflict { border-color: var(--red); animation: pulseRed 1.2s infinite; }
+  @keyframes pulseRed { 0%,100% { box-shadow: 0 0 0 0 rgba(218,54,51,.5); } 50% { box-shadow: 0 0 0 4px rgba(218,54,51,0); } }
+  .queue-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 10px; }
+  .patient-name { font-weight: 600; font-size: 15px; font-family: var(--mono); }
+  .count-badge { font-family: var(--mono); font-size: 13px; color: var(--text-dim); white-space: nowrap; }
+  .count-badge b { color: var(--accent); }
+  .progress { height: 6px; background: var(--bg-elev2); border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
+  .progress > div { height: 100%; background: var(--accent); transition: width .4s ease; }
+  .queue-card.complete .progress > div { background: var(--green); }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .tile {
+    aspect-ratio: 1; border-radius: 6px; border: 1px dashed var(--border);
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg); overflow: hidden; position: relative;
+  }
+  .tile.filled { border-style: solid; cursor: pointer; }
+  .tile img { width: 100%; height: 100%; object-fit: contain; }
+  .tile .plus { color: var(--text-dim); font-size: 22px; }
+  .tile .remove {
+    position: absolute; top: 3px; right: 3px; background: rgba(0,0,0,.7);
+    border: none; border-radius: 4px; color: var(--text); padding: 1px 6px; font-size: 12px; display: none;
+  }
+  .tile.filled:hover .remove { display: block; }
+  .badge-warn {
+    display: inline-block; background: rgba(210,153,34,.15); color: var(--yellow);
+    border: 1px solid var(--yellow); border-radius: 12px; padding: 2px 10px; font-size: 11px;
+    font-family: var(--mono); animation: pulseY 1.2s infinite; margin-bottom: 10px;
+  }
+  @keyframes pulseY { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+  .conflict-msg {
+    background: rgba(218,54,51,.12); color: #ff7b72; border: 1px solid var(--red);
+    border-radius: 6px; padding: 7px 10px; font-size: 12px; margin-bottom: 10px; font-family: var(--mono);
+  }
+  .generating { color: var(--accent); font-family: var(--mono); font-size: 13px; margin-bottom: 10px; }
+  .queue-actions { display: flex; gap: 8px; }
+
+  /* ---------- Panels history ---------- */
+  .panels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  .panel-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .panel-card .thumb { aspect-ratio: 1; background: #000; display: flex; align-items: center; justify-content: center; }
+  .panel-card .thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .panel-card .meta { padding: 12px; }
+  .panel-card .pname { font-family: var(--mono); font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+  .panel-card .pdate { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
+  .panel-card .pactions { display: flex; gap: 6px; }
+  .panel-card .pactions button { padding: 5px 9px; font-size: 11px; flex: 1; }
+
+  .empty { color: var(--text-dim); font-family: var(--mono); font-size: 13px; padding: 20px; text-align: center; border: 1px dashed var(--border); border-radius: 8px; }
+
+  /* ---------- Event log ---------- */
+  .log { background: #010409; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; max-height: 220px; overflow-y: auto; font-family: var(--mono); font-size: 12px; }
+  .log-line { padding: 2px 0; color: var(--text-dim); }
+  .log-line .t { color: #586069; }
+  .log-line.ok .i { color: var(--green); }
+  .log-line.warn .i { color: var(--yellow); }
+  .log-line.info .i { color: var(--accent); }
+
+  /* ---------- Toasts ---------- */
+  #toasts { position: fixed; top: 80px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 10px; }
+  .toast {
+    background: var(--bg-elev2); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: 12px 14px; min-width: 280px; max-width: 340px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5); animation: slideInRight .3s ease-out;
+  }
+  .toast.out { animation: slideOutRight .3s ease-in forwards; }
+  @keyframes slideInRight { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+  @keyframes slideOutRight { to { opacity: 0; transform: translateX(40px); } }
+  .toast.green { border-left-color: var(--green); }
+  .toast.yellow { border-left-color: var(--yellow); }
+  .toast.red { border-left-color: var(--red); }
+  .toast .ttitle { font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; }
+  .toast .ttitle .x { cursor: pointer; color: var(--text-dim); }
+  .toast .tbody { font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+  .toast .tactions { margin-top: 8px; }
+  .toast .tactions button { padding: 3px 10px; font-size: 11px; }
+
+  /* ---------- Away banner ---------- */
+  #away-banner {
+    background: linear-gradient(90deg, rgba(0,180,216,.15), transparent);
+    border: 1px solid var(--accent); border-radius: 8px; padding: 12px 16px;
+    margin-bottom: 18px; display: none; align-items: center; gap: 12px; font-family: var(--mono); font-size: 13px;
+  }
+  #away-banner button { margin-left: auto; }
+
+  /* ---------- Lightbox ---------- */
+  #lightbox {
+    position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 200;
+    display: none; align-items: center; justify-content: center; cursor: zoom-out;
+  }
+  #lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Radio<span class="grid-dot">Grid</span></div>
+  <div class="status-pill" id="status-pill"><span class="dot"></span><span id="status-text">Monitorando</span></div>
+  <div class="stats">
+    <div class="stat">📋 <b id="stat-queues">0</b> filas ativas</div>
+    <div class="stat">✓ <b id="stat-panels">0</b> painéis hoje</div>
+    <div class="stat">🖼 <b id="stat-images">0</b> imagens detectadas</div>
+  </div>
+</header>
+
+<main>
+  <div class="privacy">Dados processados localmente — nenhuma informação enviada à internet</div>
+
+  <div id="away-banner">
+    <span id="away-text"></span>
+    <button class="primary" onclick="scrollToPanels()">Ver</button>
+  </div>
+
+  <!-- Config -->
+  <section>
+    <div class="section-title collapsed" onclick="toggleSection(this)"><span class="chev">▼</span> Configuração</div>
+    <div class="collapsible-body hidden">
+      <div class="config-card">
+        <div class="config-row">
+          <label>Pastas monitoradas</label>
+          <div class="folder-list" id="folder-list"></div>
+          <div class="folder-item">
+            <input type="text" id="new-folder" placeholder="~/Desktop ou /caminho/da/pasta">
+            <button onclick="addFolder()">+ Adicionar</button>
+          </div>
+        </div>
+        <div class="config-row">
+          <label>Pasta de output</label>
+          <input type="text" id="output-folder" placeholder="~/Desktop/RadioGrid_Output">
+        </div>
+        <div class="config-row">
+          <label>Intervalo de polling</label>
+          <div class="slider-row">
+            <input type="range" id="poll-slider" min="1" max="10" value="2" oninput="document.getElementById('poll-val').textContent=this.value+'s'">
+            <span class="slider-val" id="poll-val">2s</span>
+          </div>
+        </div>
+        <button class="primary" onclick="saveConfig()">Salvar configuração</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Active queues -->
+  <section>
+    <div class="section-title"><span class="chev" style="visibility:hidden">▼</span> Filas Ativas</div>
+    <div class="collapsible-body">
+      <div class="queues-grid" id="queues-grid"></div>
+      <div class="empty" id="queues-empty">Nenhuma fila ativa. Imagens detectadas aparecerão aqui.</div>
+    </div>
+  </section>
+
+  <!-- Generated panels -->
+  <section id="panels-section">
+    <div class="section-title"><span class="chev" style="visibility:hidden">▼</span> Painéis Gerados</div>
+    <div class="collapsible-body">
+      <div class="panels-grid" id="panels-grid"></div>
+      <div class="empty" id="panels-empty">Nenhum painel gerado ainda.</div>
+    </div>
+  </section>
+
+  <!-- Event log -->
+  <section>
+    <div class="section-title collapsed" onclick="toggleSection(this)"><span class="chev">▼</span> Log de Eventos</div>
+    <div class="collapsible-body hidden">
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toasts"></div>
+<div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src="" alt=""></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let STATE = { queues: {}, panels: [], config: {}, stats: {} };
+let CONFIG_FOLDERS = [];
+let pendingPanels = 0;
+let sessionStart = new Date().toISOString();
+let audioEnabled = false;
+const imgCache = {};
+
+// ---------- interaction unlock for audio ----------
+document.addEventListener('click', () => { audioEnabled = true; }, { once: true });
+
+// ---------- helpers ----------
+function toggleSection(el) {
+  el.classList.toggle('collapsed');
+  const body = el.nextElementSibling;
+  if (body) body.classList.toggle('hidden');
+}
+function fmtTime(iso) {
+  try { return new Date(iso).toLocaleTimeString('pt-BR', { hour12: false }); }
+  catch { return iso; }
+}
+function nowTime() { return new Date().toLocaleTimeString('pt-BR', { hour12: false }); }
+function scrollToPanels() { $('panels-section').scrollIntoView({ behavior: 'smooth' }); $('away-banner').style.display = 'none'; }
+
+async function fetchImage(path) {
+  if (imgCache[path]) return imgCache[path];
+  try {
+    const r = await fetch('/api/image?path=' + encodeURIComponent(path));
+    if (!r.ok) return null;
+    const j = await r.json();
+    imgCache[path] = j.data_uri;
+    return j.data_uri;
+  } catch { return null; }
+}
+function showLightbox(src) { $('lightbox-img').src = src; $('lightbox').style.display = 'flex'; }
+
+// ---------- rendering ----------
+function renderStats() {
+  const s = STATE.stats || {};
+  $('stat-queues').textContent = s.active_queues ?? 0;
+  $('stat-panels').textContent = s.panels_today ?? 0;
+  $('stat-images').textContent = s.images_today ?? 0;
+}
+
+function renderConfig() {
+  const c = STATE.config || {};
+  CONFIG_FOLDERS = [...(c.watch_folders || [])];
+  renderFolderList();
+  $('output-folder').value = c.output_folder || '';
+  const poll = c.poll_interval_seconds || 2;
+  $('poll-slider').value = poll;
+  $('poll-val').textContent = poll + 's';
+}
+function renderFolderList() {
+  const list = $('folder-list');
+  list.innerHTML = '';
+  CONFIG_FOLDERS.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'folder-item';
+    row.innerHTML = `<input type="text" value="${f.replace(/"/g, '&quot;')}" onchange="CONFIG_FOLDERS[${i}]=this.value">
+      <button class="danger" onclick="removeFolder(${i})">×</button>`;
+    list.appendChild(row);
+  });
+}
+function addFolder() {
+  const v = $('new-folder').value.trim();
+  if (v) { CONFIG_FOLDERS.push(v); $('new-folder').value = ''; renderFolderList(); }
+}
+function removeFolder(i) { CONFIG_FOLDERS.splice(i, 1); renderFolderList(); }
+
+async function renderQueues() {
+  const grid = $('queues-grid');
+  const queues = STATE.queues || {};
+  const active = Object.entries(queues).filter(([_, q]) => (q.count || 0) > 0);
+  $('queues-empty').style.display = active.length ? 'none' : 'block';
+
+  grid.innerHTML = '';
+  for (const [patient, q] of active) {
+    const count = q.count || 0;
+    const conflict = checkConflict(q.images || []);
+    const card = document.createElement('div');
+    card.className = 'queue-card' + (conflict.conflict ? ' conflict' : '');
+    card.dataset.patient = patient;
+
+    let html = `<div class="queue-head">
+      <span class="patient-name">${escapeHtml(patient)}</span>
+      <span class="count-badge"><b>${count}</b>/4</span></div>
+      <div class="progress"><div style="width:${(count / 4) * 100}%"></div></div>`;
+    if (conflict.conflict) html += `<div class="conflict-msg">⚠ ${escapeHtml(conflict.message)}</div>`;
+    if (count === 3) html += `<div class="badge-warn">1 faltando</div>`;
+    html += `<div class="tiles">`;
+    for (let i = 0; i < 4; i++) {
+      const img = (q.images || [])[i];
+      if (img) {
+        html += `<div class="tile filled" data-path="${escapeHtml(img.path)}">
+          <button class="remove" data-patient="${escapeHtml(patient)}" data-path="${escapeHtml(img.path)}">×</button>
+          <span class="ph">…</span></div>`;
+      } else {
+        html += `<div class="tile"><span class="plus">+</span></div>`;
+      }
+    }
+    html += `</div>
+      <div class="queue-actions">
+        <button class="primary" onclick="generateNow('${escapeJs(patient)}')">Gerar agora</button>
+        <button class="danger" onclick="clearQueue('${escapeJs(patient)}')">Limpar fila</button>
+      </div>`;
+    card.innerHTML = html;
+    grid.appendChild(card);
+
+    // carregar thumbnails async
+    (q.images || []).forEach(async (img) => {
+      const tile = card.querySelector(`.tile.filled[data-path="${cssEscape(img.path)}"]`);
+      if (!tile) return;
+      const uri = await fetchImage(img.path);
+      if (uri) {
+        const el = document.createElement('img');
+        el.src = uri;
+        el.onclick = () => showLightbox(uri);
+        tile.querySelector('.ph')?.remove();
+        tile.insertBefore(el, tile.firstChild);
+      }
+    });
+    // bind remove buttons
+    card.querySelectorAll('.remove').forEach(btn => {
+      btn.onclick = (e) => { e.stopPropagation(); removeImage(btn.dataset.patient, btn.dataset.path); };
+    });
+  }
+}
+
+async function renderPanels() {
+  const grid = $('panels-grid');
+  const panels = [...(STATE.panels || [])].reverse();
+  $('panels-empty').style.display = panels.length ? 'none' : 'block';
+  grid.innerHTML = '';
+  for (const p of panels) {
+    const card = document.createElement('div');
+    card.className = 'panel-card';
+    const fname = p.path.split('/').pop();
+    card.innerHTML = `<div class="thumb"><span class="ph" style="color:#444">carregando…</span></div>
+      <div class="meta">
+        <div class="pname">${escapeHtml(p.patient)}</div>
+        <div class="pdate">#${p.panel_number || ''} · ${fmtTime(p.created_at)}</div>
+        <div class="pactions">
+          <button onclick="openFinder('${escapeJs(p.path)}')">Abrir no Finder</button>
+          <button onclick="copyPanel('${escapeJs('/output/' + fname)}', this)">Copiar</button>
+        </div>
+      </div>`;
+    grid.appendChild(card);
+    const uri = await fetchImage(p.path);
+    const thumb = card.querySelector('.thumb');
+    if (uri) { thumb.innerHTML = ''; const im = document.createElement('img'); im.src = uri; im.onclick = () => showLightbox(uri); thumb.appendChild(im); }
+  }
+}
+
+function checkConflict(images) {
+  const names = images.map(i => i.name_detected).filter(n => n && n !== 'DESCONHECIDO');
+  if (!names.length) return { conflict: false };
+  const uniq = [...new Set(names)];
+  if (uniq.length === 1) return { conflict: false };
+  return { conflict: true, message: 'Nomes divergentes: ' + uniq.join(', ') };
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function escapeJs(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+function cssEscape(s) { return s.replace(/(["\\])/g, '\\$1'); }
+
+// ---------- API actions ----------
+async function saveConfig() {
+  const body = {
+    watch_folders: CONFIG_FOLDERS.filter(f => f.trim()),
+    output_folder: $('output-folder').value.trim(),
+    poll_interval_seconds: parseInt($('poll-slider').value, 10),
+  };
+  await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  toast('green', '✓ Configuração salva', 'Pastas monitoradas atualizadas');
+  await refreshState();
+}
+async function generateNow(patient) {
+  await fetch('/api/queue/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patient }) });
+  await refreshState();
+}
+async function clearQueue(patient) {
+  await fetch('/api/queue/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patient }) });
+  await refreshState();
+}
+async function removeImage(patient, path) {
+  await fetch('/api/queue/remove-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patient, path }) });
+  await refreshState();
+}
+async function openFinder(path) {
+  await fetch('/api/open-finder?path=' + encodeURIComponent(path));
+  toast('green', '📂 Abrindo no Finder', path.split('/').pop());
+}
+async function copyPanel(url, btn) {
+  try {
+    const blob = await (await fetch(url)).blob();
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+    btn.textContent = '✓ Copiado'; setTimeout(() => btn.textContent = 'Copiar', 1500);
+  } catch { btn.textContent = 'Falhou'; setTimeout(() => btn.textContent = 'Copiar', 1500); }
+}
+
+// ---------- state ----------
+async function refreshState() {
+  try {
+    const r = await fetch('/api/state');
+    STATE = await r.json();
+    renderStats(); renderQueues(); renderPanels();
+  } catch (e) { console.error(e); }
+}
+
+// ---------- SSE ----------
+function connectSSE() {
+  const src = new EventSource('/events');
+
+  src.addEventListener('image_detected', (e) => {
+    const d = JSON.parse(e.data);
+    logLine('ok', `Imagem detectada — ${d.patient} (${d.queue_size}/4)`);
+    refreshState();
+  });
+  src.addEventListener('queue_complete', (e) => {
+    const d = JSON.parse(e.data);
+    logLine('ok', `Fila completa — ${d.patient} (4/4), gerando painel #${d.panel_number}`);
+    pendingPanels++; document.title = `(${pendingPanels}) RadioGrid`;
+    playSound();
+    toast('green', '✓ 4 imagens — gerando', `${d.patient} · painel #${d.panel_number}`);
+    markComplete(d.patient);
+  });
+  src.addEventListener('panel_generated', (e) => {
+    const d = JSON.parse(e.data);
+    logLine('ok', `Painel gerado — ${d.panel_path.split('/').pop()}`);
+    toast('green', '✓ Painel gerado', `${d.patient} · #${d.panel_number}`, '/output/' + d.panel_path.split('/').pop());
+    refreshState();
+  });
+  src.addEventListener('name_conflict', (e) => {
+    const d = JSON.parse(e.data);
+    logLine('warn', `Conflito de nome — ${d.message || d.patient}`);
+    toast('yellow', '⚠ Conflito de nome', d.message || d.patient);
+    refreshState();
+  });
+  src.addEventListener('watcher_status', (e) => {
+    const d = JSON.parse(e.data);
+    setStatus(d.status === 'watching');
+    logLine('info', `Watcher: ${d.status} — ${(d.folders || []).join(', ')}`);
+  });
+  src.onerror = () => { setStatus(false); };
+  src.onopen = () => { setStatus(true); };
+}
+
+function setStatus(watching) {
+  const pill = $('status-pill');
+  pill.classList.toggle('paused', !watching);
+  $('status-text').textContent = watching ? 'Monitorando' : 'Reconectando…';
+}
+
+function markComplete(patient) {
+  const card = document.querySelector(`.queue-card[data-patient="${cssEscape(patient)}"]`);
+  if (card) {
+    card.classList.add('complete');
+    const actions = card.querySelector('.queue-actions');
+    if (actions) actions.outerHTML = '<div class="generating">⏳ Gerando painel...</div>';
+  }
+}
+
+// ---------- log ----------
+function logLine(kind, msg) {
+  const log = $('log');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + kind;
+  const icon = kind === 'warn' ? '⚠' : (kind === 'info' ? 'ℹ' : '✓');
+  line.innerHTML = `<span class="t">${nowTime()}</span>  <span class="i">${icon}</span>  ${escapeHtml(msg)}`;
+  log.insertBefore(line, log.firstChild);
+  while (log.children.length > 200) log.removeChild(log.lastChild);
+}
+
+// ---------- toasts ----------
+function toast(color, title, body, openUrl) {
+  const wrap = $('toasts');
+  while (wrap.children.length >= 3) wrap.removeChild(wrap.lastChild);
+  const t = document.createElement('div');
+  t.className = 'toast ' + color;
+  let actions = '';
+  if (openUrl) actions = `<div class="tactions"><button onclick="window.open('${escapeJs(openUrl)}','_blank')">Abrir</button></div>`;
+  t.innerHTML = `<div class="ttitle">${escapeHtml(title)}<span class="x">×</span></div>
+    <div class="tbody">${escapeHtml(body)}</div>${actions}`;
+  t.querySelector('.x').onclick = () => dismiss(t);
+  wrap.insertBefore(t, wrap.firstChild);
+  setTimeout(() => dismiss(t), 5000);
+}
+function dismiss(t) { if (!t.parentNode) return; t.classList.add('out'); setTimeout(() => t.remove(), 300); }
+
+// ---------- sound ----------
+function playSound() {
+  if (!audioEnabled) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.2].forEach(delay => {
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine'; osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0, ctx.currentTime + delay);
+      gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + delay + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.15);
+      osc.start(ctx.currentTime + delay); osc.stop(ctx.currentTime + delay + 0.15);
+    });
+  } catch {}
+}
+
+// ---------- tab badge ----------
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { pendingPanels = 0; document.title = 'RadioGrid'; }
+});
+
+// ---------- away banner ----------
+function checkAwayPanels() {
+  const recent = (STATE.panels || []).filter(p => p.created_at > sessionStart);
+  if (recent.length) {
+    $('away-text').textContent = `⚡ ${recent.length} painel(éis) gerado(s) enquanto você estava ausente`;
+    $('away-banner').style.display = 'flex';
+  }
+}
+
+// ---------- init ----------
+(async function init() {
+  await refreshState();
+  sessionStart = STATE.server_time || sessionStart;
+  connectSSE();
+  logLine('info', 'Dashboard conectado' + (STATE.is_macos ? ' (macOS)' : ' (modo stub — Linux)'));
+})();
+</script>
+</body>
+</html>
