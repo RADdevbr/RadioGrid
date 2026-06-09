@@ -291,3 +291,32 @@ def open_in_finder(path: str) -> None:
         subprocess.run(["open", "-R", path], capture_output=True, timeout=10)
     except Exception:
         pass
+
+
+# ------------------------------------------------------------------
+# Seletor de pasta nativo — osascript "choose folder" (macOS) / stub
+# ------------------------------------------------------------------
+def choose_folder():
+    """Abre o diálogo nativo "choose folder" do macOS e devolve o caminho POSIX.
+
+    Retorna None se o usuário cancelar ou em caso de falha. Em SO não-macOS
+    devolve None (stub) — nunca propaga exceção.
+    """
+    if not is_macos():
+        print("[CHOOSE] Seletor de pasta indisponível neste SO (stub).")
+        return None
+    import subprocess
+
+    script = (
+        'POSIX path of (choose folder '
+        'with prompt "Escolha a pasta para monitorar")'
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=120,
+        )
+        # Cancelar => returncode != 0 e stdout vazio.
+        return result.stdout.strip() or None
+    except Exception:
+        return None

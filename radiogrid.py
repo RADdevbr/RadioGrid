@@ -34,6 +34,7 @@ from macos_bridge import (
     compose_panel,
     notify_macos,
     open_in_finder,
+    choose_folder,
     normalize_name,
     is_macos,
 )
@@ -494,6 +495,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_output(path[len("/output/"):])
         if path == "/api/open-finder":
             return self._open_finder(qs.get("path", [None])[0])
+        if path == "/api/choose-folder":
+            return self._choose_folder()
 
         self._send_json({"error": "not found"}, 404)
 
@@ -602,6 +605,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json({"error": "forbidden"}, 403)
         open_in_finder(path)
         return self._send_json({"ok": True})
+
+    def _choose_folder(self):
+        folder = choose_folder()
+        if not folder:
+            return self._send_json({"ok": False})
+        return self._send_json({"ok": True, "path": folder})
 
 
 # ==================================================================
