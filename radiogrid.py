@@ -19,6 +19,7 @@ import os
 import sys
 import json
 import time
+import errno
 import queue
 import shutil
 import base64
@@ -710,12 +711,26 @@ def main():
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
 
+    url = f"http://localhost:{args.port}"
+
+    # Tenta abrir o servidor antes de iniciar o watcher. Se a porta já estiver
+    # em uso, é quase certo que o RadioGrid já está aberto — então só abrimos o
+    # navegador e saímos, sem traceback e sem criar uma segunda instância.
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            print(f"O RadioGrid já parece estar aberto (porta {args.port} em uso).")
+            print(f"Abrindo {url} no navegador...")
+            if not args.no_browser:
+                webbrowser.open(url)
+            return
+        raise
+
+    server.daemon_threads = True
+
     APP = RadioGrid()
     APP.start_watcher()
-
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    server.daemon_threads = True
-    url = f"http://localhost:{args.port}"
 
     print(f"RadioGrid rodando em {url}")
     print(f"  Plataforma macOS: {is_macos()}")
