@@ -121,6 +121,36 @@ class TestPipeline(unittest.TestCase):
             self.app.state["queues"][radiogrid.DEFAULT_PATIENT]["count"], 1
         )
 
+    def test_queue_reorder(self):
+        patient = "PAC ORDEM"
+        for p in self.imgs[:3]:
+            self.app._add_image(patient, p, patient, "test")
+        nova = list(reversed(self.imgs[:3]))
+        res = self.app.queue_reorder(patient, nova)
+        self.assertTrue(res["ok"])
+        got = [i["path"] for i in self.app.state["queues"][patient]["images"]]
+        self.assertEqual(got, nova)
+
+    def test_edit_panel_restores_and_regenerates(self):
+        patient = "PACIENTE TESTE"
+        for p in self.imgs:  # 4 imagens -> gera painel_1 e zera a fila
+            self.app._add_image(patient, p, patient, "test")
+        self.assertEqual(self.app.state["queues"][patient]["count"], 0)
+        panel1 = self.app.state["panels"][0]
+
+        res = self.app.edit_panel(panel1["path"])
+        self.assertTrue(res["ok"])
+        self.assertEqual(self.app.state["queues"][patient]["count"], 4)
+
+        panel2 = self.app.generate_panel(patient)
+        self.assertIsNotNone(panel2)
+        self.assertEqual(panel2["panel_number"], 2)
+        self.assertEqual(len(self.app.state["panels"]), 2)
+
+    def test_edit_panel_missing_sources(self):
+        res = self.app.edit_panel("/nao/existe/painel.png")
+        self.assertFalse(res["ok"])
+
 
 class TestImport(unittest.TestCase):
     """Importação manual: por caminho local e por upload base64."""

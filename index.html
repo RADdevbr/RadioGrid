@@ -142,7 +142,15 @@
     display: flex; align-items: center; justify-content: center;
     background: var(--bg); overflow: hidden; position: relative;
   }
-  .tile.filled { border-style: solid; cursor: pointer; }
+  .tile.filled { border-style: solid; cursor: grab; }
+  .tile.filled:active { cursor: grabbing; }
+  .tile.dragging { opacity: .4; }
+  .tile.drop-target { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tile .pos {
+    position: absolute; top: 3px; left: 3px; z-index: 2;
+    background: rgba(0,0,0,.7); color: var(--accent); font-family: var(--mono);
+    font-size: 11px; font-weight: 700; border-radius: 4px; padding: 0 5px;
+  }
   .tile img { width: 100%; height: 100%; object-fit: contain; }
   .tile .plus { color: var(--text-dim); font-size: 22px; }
   .tile .remove {
@@ -434,7 +442,8 @@ async function renderQueues() {
     for (let i = 0; i < 4; i++) {
       const img = (q.images || [])[i];
       if (img) {
-        html += `<div class="tile filled" data-path="${escapeHtml(img.path)}">
+        html += `<div class="tile filled" draggable="true" data-path="${escapeHtml(img.path)}">
+          <span class="pos">${i + 1}</span>
           <button class="remove" data-patient="${escapeHtml(patient)}" data-path="${escapeHtml(img.path)}">×</button>
           <span class="ph">…</span></div>`;
       } else {
@@ -457,6 +466,7 @@ async function renderQueues() {
       if (uri) {
         const el = document.createElement('img');
         el.src = uri;
+        el.draggable = false;  // o arraste é do tile (reordenação), não da imagem
         el.onclick = () => showLightbox(uri);
         tile.querySelector('.ph')?.remove();
         tile.insertBefore(el, tile.firstChild);
@@ -466,7 +476,51 @@ async function renderQueues() {
     card.querySelectorAll('.remove').forEach(btn => {
       btn.onclick = (e) => { e.stopPropagation(); removeImage(btn.dataset.patient, btn.dataset.path); };
     });
+    // arrastar para reordenar
+    bindReorder(card, patient);
   }
+}
+
+function bindReorder(card, patient) {
+  let dragPath = null;
+  card.querySelectorAll('.tile.filled').forEach(tile => {
+    tile.addEventListener('dragstart', (e) => {
+      dragPath = tile.dataset.path;
+      e.dataTransfer.effectAllowed = 'move';
+      tile.classList.add('dragging');
+    });
+    tile.addEventListener('dragend', () => { tile.classList.remove('dragging'); dragPath = null; });
+    tile.addEventListener('dragover', (e) => { e.preventDefault(); tile.classList.add('drop-target'); });
+    tile.addEventListener('dragleave', () => tile.classList.remove('drop-target'));
+    tile.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      tile.classList.remove('drop-target');
+      const targetPath = tile.dataset.path;
+      if (!dragPath || dragPath === targetPath) return;
+      const order = [...card.querySelectorAll('.tile.filled')].map(t => t.dataset.path);
+      const from = order.indexOf(dragPath), to = order.indexOf(targetPath);
+      if (from < 0 || to < 0) return;
+      order.splice(to, 0, order.splice(from, 1)[0]);
+      try {
+        await fetch('/api/queue/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patient, paths: order }) });
+        await refreshState();
+      } catch { toast('yellow', 'Falha ao reordenar', patient); }
+    });
+  });
+}
+
+async function editPanel(panelPath) {
+  try {
+    const r = await fetch('/api/panel/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: panelPath }) });
+    const j = await r.json();
+    if (j.ok) {
+      toast('green', '✏️ Painel reaberto para edição', `${j.restored} imagem(ns) na fila — reordene e gere`);
+      await refreshState();
+      $('queues-grid').scrollIntoView({ behavior: 'smooth' });
+    } else {
+      toast('yellow', 'Não foi possível editar', j.error || 'imagens-fonte indisponíveis');
+    }
+  } catch { toast('yellow', 'Falha ao reabrir painel', ''); }
 }
 
 async function renderPanels() {
@@ -485,6 +539,7 @@ async function renderPanels() {
         <div class="pactions">
           <button onclick="openFinder('${escapeJs(p.path)}')">Abrir no Finder</button>
           <button onclick="copyPanel('${escapeJs('/output/' + fname)}', this)">Copiar</button>
+          <button onclick="editPanel('${escapeJs(p.path)}')">Editar</button>
         </div>
       </div>`;
     grid.appendChild(card);
