@@ -4,6 +4,7 @@ state.json
 state.json.tmp
 output/
 RadioGrid_Output/
+imports/
 
 # Python
 __pycache__/

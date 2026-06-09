@@ -112,6 +112,8 @@
   .folder-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
   .folder-item { display: flex; gap: 8px; align-items: center; }
   .folder-item button { padding: 6px 10px; }
+  .dropzone { border: 1.5px dashed var(--border); border-radius: 8px; padding: 18px; color: var(--text-dim); font-size: 13px; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; transition: border-color .15s, background .15s; }
+  .dropzone.drag { border-color: var(--accent); background: rgba(44,200,237,.08); color: var(--text); }
   .slider-row { display: flex; align-items: center; gap: 14px; }
   input[type=range] { flex: 1; accent-color: var(--accent); }
   .slider-val { font-family: var(--mono); color: var(--accent); min-width: 38px; }
@@ -263,6 +265,28 @@
           </div>
         </div>
         <button class="primary" onclick="saveConfig()">Salvar configuração</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Importação manual -->
+  <section>
+    <div class="section-title collapsed" onclick="toggleSection(this)"><span class="chev">▼</span> Importar imagens</div>
+    <div class="collapsible-body hidden">
+      <div class="config-card">
+        <div class="config-row">
+          <label>Nome do paciente</label>
+          <input type="text" id="import-patient" placeholder="Ex.: João Silva — a imagem vai direto para esta fila">
+        </div>
+        <div class="config-row">
+          <label>Imagens</label>
+          <div id="dropzone" class="dropzone">
+            <span>Arraste imagens aqui, ou</span>
+            <button onclick="document.getElementById('import-file-input').click()">Escolher arquivos…</button>
+            <button onclick="importNative()">📁 Escolher (macOS)</button>
+          </div>
+          <input type="file" id="import-file-input" accept="image/*" multiple style="display:none" onchange="importBrowserFiles(this.files)">
+        </div>
       </div>
     </div>
   </section>
@@ -482,6 +506,62 @@ function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp
 function escapeJs(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 function cssEscape(s) { return s.replace(/(["\\])/g, '\\$1'); }
 
+// ---------- importação manual ----------
+function importPatientName() {
+  const v = $('import-patient').value.trim();
+  if (!v) { toast('yellow', 'Informe o paciente', 'Digite o nome antes de importar'); return null; }
+  return v;
+}
+function readFileAsDataURL(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+async function postImport(payload) {
+  try {
+    const r = await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const j = await r.json();
+    if (j.imported > 0) toast('green', `✓ ${j.imported} imagem(ns) importada(s)`, payload.patient);
+    if (j.errors && j.errors.length) toast('yellow', 'Alguns itens não importados', j.errors.join(' · '));
+    if (!j.imported && (!j.errors || !j.errors.length)) toast('yellow', 'Nada importado', 'Nenhuma imagem válida');
+    await refreshState();
+  } catch { toast('yellow', 'Falha na importação', payload.patient); }
+}
+async function importNative() {
+  const patient = importPatientName(); if (!patient) return;
+  try {
+    const r = await fetch('/api/choose-files');
+    const j = await r.json();
+    if (!j.ok || !(j.paths || []).length) { toast('yellow', 'Seleção cancelada', 'Nenhum arquivo (ou indisponível neste SO)'); return; }
+    await postImport({ patient, paths: j.paths });
+  } catch { toast('yellow', 'Falha ao abrir seletor', 'Use "Escolher arquivos…" ou arraste imagens'); }
+}
+async function importBrowserFiles(fileList) {
+  const patient = importPatientName(); if (!patient) return;
+  const files = [];
+  for (const f of fileList) {
+    if (!f.type.startsWith('image/')) continue;
+    files.push({ name: f.name, data_base64: await readFileAsDataURL(f) });
+  }
+  if (!files.length) { toast('yellow', 'Nenhuma imagem', 'Selecione arquivos de imagem'); return; }
+  await postImport({ patient, files });
+  $('import-file-input').value = '';
+}
+function setupDropzone() {
+  const dz = $('dropzone');
+  if (!dz) return;
+  ['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+  ['dragleave', 'dragend'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag');
+    const files = [...((e.dataTransfer && e.dataTransfer.files) || [])];
+    if (files.length) importBrowserFiles(files);
+  });
+}
+
 // ---------- API actions ----------
 async function saveConfig() {
   const body = {
@@ -653,6 +733,7 @@ function checkAwayPanels() {
 (async function init() {
   await refreshState();
   renderConfig();
+  setupDropzone();
   sessionStart = STATE.server_time || sessionStart;
   connectSSE();
   // Auto-refresh leve como rede de segurança ao SSE (não toca no form de config).

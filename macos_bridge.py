@@ -320,3 +320,35 @@ def choose_folder():
         return result.stdout.strip() or None
     except Exception:
         return None
+
+
+def choose_files():
+    """Abre o diálogo nativo "choose file" do macOS (seleção múltipla de imagens).
+
+    Devolve uma lista de caminhos POSIX (vazia se cancelar / fora do macOS).
+    Nunca propaga exceção.
+    """
+    if not is_macos():
+        print("[CHOOSE] Seletor de arquivos indisponível neste SO (stub).")
+        return []
+    import subprocess
+
+    # AppleScript multi-linha: coleta cada arquivo escolhido como caminho POSIX,
+    # um por linha, para o stdout.
+    script = (
+        'set theFiles to choose file with prompt "Escolha as imagens para importar" '
+        'of type {"public.image"} with multiple selections allowed\n'
+        'set out to ""\n'
+        'repeat with f in theFiles\n'
+        '  set out to out & POSIX path of f & linefeed\n'
+        'end repeat\n'
+        'return out'
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=180,
+        )
+        return [ln for ln in result.stdout.splitlines() if ln.strip()]
+    except Exception:
+        return []

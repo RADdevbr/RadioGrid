@@ -114,5 +114,64 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(self.app.state["queues"][patient]["count"], 0)
 
 
+class TestImport(unittest.TestCase):
+    """Importação manual: por caminho local e por upload base64."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self._orig = (radiogrid.CONFIG_PATH, radiogrid.STATE_PATH, radiogrid.IMPORT_DIR)
+        radiogrid.CONFIG_PATH = os.path.join(self.tmp, "config.json")
+        radiogrid.STATE_PATH = os.path.join(self.tmp, "state.json")
+        radiogrid.IMPORT_DIR = os.path.join(self.tmp, "imports")
+
+        self.app = radiogrid.RadioGrid()
+        self.app.config["output_folder"] = os.path.join(self.tmp, "output")
+        self.app.config["watch_folders"] = [self.tmp]
+
+        self.src = os.path.join(self.tmp, "origem.png")
+        with open(self.src, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+
+    def tearDown(self):
+        radiogrid.CONFIG_PATH, radiogrid.STATE_PATH, radiogrid.IMPORT_DIR = self._orig
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_import_by_path_copies_and_queues(self):
+        res = self.app.import_images("Maria Souza", paths=[self.src])
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["imported"], 1)
+        q = self.app.state["queues"]["MARIA SOUZA"]
+        self.assertEqual(q["count"], 1)
+        dest = q["images"][0]["path"]
+        self.assertTrue(dest.startswith(radiogrid.IMPORT_DIR))
+        self.assertTrue(os.path.isfile(dest))  # cópia, não o original
+        self.assertTrue(os.path.isfile(self.src))
+        self.assertTrue(self.app.path_allowed(dest))  # thumbnail/Finder liberados
+
+    def test_import_by_upload_base64(self):
+        import base64
+        with open(self.src, "rb") as f:
+            data = base64.b64encode(f.read()).decode("ascii")
+        res = self.app.import_images(
+            "Maria Souza",
+            files=[{"name": "upload.png", "data_base64": "data:image/png;base64," + data}],
+        )
+        self.assertEqual(res["imported"], 1)
+        self.assertEqual(self.app.state["queues"]["MARIA SOUZA"]["count"], 1)
+
+    def test_import_requires_patient(self):
+        res = self.app.import_images("", paths=[self.src])
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["imported"], 0)
+
+    def test_import_rejects_non_image(self):
+        txt = os.path.join(self.tmp, "nota.txt")
+        with open(txt, "w") as f:
+            f.write("x")
+        res = self.app.import_images("Maria Souza", paths=[txt])
+        self.assertEqual(res["imported"], 0)
+        self.assertTrue(res["errors"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

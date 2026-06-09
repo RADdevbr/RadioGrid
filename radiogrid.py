@@ -20,6 +20,7 @@ import sys
 import json
 import time
 import queue
+import shutil
 import base64
 import argparse
 import threading
@@ -35,6 +36,7 @@ from macos_bridge import (
     notify_macos,
     open_in_finder,
     choose_folder,
+    choose_files,
     normalize_name,
     is_macos,
 )
@@ -46,6 +48,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 STATE_PATH = os.path.join(BASE_DIR, "state.json")
 INDEX_PATH = os.path.join(BASE_DIR, "index.html")
+IMPORT_DIR = os.path.join(BASE_DIR, "imports")
 DEFAULT_PORT = 7842
 IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 PANEL_THRESHOLD = 4
@@ -238,6 +241,7 @@ class RadioGrid:
     def watched_roots(self):
         roots = [os.path.expanduser(f) for f in self.config["watch_folders"]]
         roots.append(self.output_dir())
+        roots.append(IMPORT_DIR)  # imagens importadas manualmente
         return [os.path.realpath(r) for r in roots]
 
     def path_allowed(self, path):
@@ -418,6 +422,69 @@ class RadioGrid:
              "images_today": self.images_detected_today},
         )
 
+    def import_images(self, patient, paths=None, files=None):
+        """Importa imagens manualmente para a fila de um paciente.
+
+        Cada imagem é salva em IMPORT_DIR (para thumbnails/Finder funcionarem) e
+        adicionada à fila com o paciente informado pelo usuário — sem OCR.
+
+        - paths: lista de caminhos locais (vindos do seletor nativo do macOS).
+        - files: lista de {"name": str, "data_base64": str} (upload do navegador).
+
+        Retorna {"ok": bool, "imported": int, "errors": [str]}.
+        """
+        patient = normalize_name(patient or "")
+        if not patient or patient == "DESCONHECIDO":
+            return {"ok": False, "imported": 0, "errors": ["Informe o nome do paciente"]}
+
+        os.makedirs(IMPORT_DIR, exist_ok=True)
+        imported = 0
+        errors = []
+
+        def _safe_name(name):
+            base = os.path.basename(name or "imagem.png")
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            return f"{stamp}_{base}"
+
+        for src in (paths or []):
+            src = os.path.expanduser(src)
+            ext = os.path.splitext(src)[1].lower()
+            if ext not in IMAGE_EXTS:
+                errors.append(f"Ignorado (não é imagem): {os.path.basename(src)}")
+                continue
+            if not os.path.isfile(src):
+                errors.append(f"Não encontrado: {os.path.basename(src)}")
+                continue
+            try:
+                dest = os.path.join(IMPORT_DIR, _safe_name(src))
+                shutil.copy(src, dest)
+                self._add_image(patient, dest, patient, "import")
+                imported += 1
+            except Exception as e:
+                errors.append(f"Falha ao importar {os.path.basename(src)}: {e}")
+
+        for item in (files or []):
+            name = item.get("name", "imagem.png")
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in IMAGE_EXTS:
+                errors.append(f"Ignorado (não é imagem): {name}")
+                continue
+            data = item.get("data_base64", "")
+            # Aceita data URIs ("data:image/png;base64,....") e base64 puro.
+            if "," in data:
+                data = data.split(",", 1)[1]
+            try:
+                raw = base64.b64decode(data)
+                dest = os.path.join(IMPORT_DIR, _safe_name(name))
+                with open(dest, "wb") as f:
+                    f.write(raw)
+                self._add_image(patient, dest, patient, "import")
+                imported += 1
+            except Exception as e:
+                errors.append(f"Falha ao importar {name}: {e}")
+
+        return {"ok": imported > 0, "imported": imported, "errors": errors}
+
     def snapshot(self):
         with self.lock:
             return {
@@ -497,6 +564,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._open_finder(qs.get("path", [None])[0])
         if path == "/api/choose-folder":
             return self._choose_folder()
+        if path == "/api/choose-files":
+            return self._choose_files()
 
         self._send_json({"error": "not found"}, 404)
 
@@ -525,6 +594,13 @@ class Handler(BaseHTTPRequestHandler):
                 normalize_name(body.get("patient", "")), body.get("path", "")
             )
             return self._send_json({"ok": True})
+        if path == "/api/import":
+            result = APP.import_images(
+                body.get("patient", ""),
+                paths=body.get("paths"),
+                files=body.get("files"),
+            )
+            return self._send_json(result)
 
         self._send_json({"error": "not found"}, 404)
 
@@ -611,6 +687,10 @@ class Handler(BaseHTTPRequestHandler):
         if not folder:
             return self._send_json({"ok": False})
         return self._send_json({"ok": True, "path": folder})
+
+    def _choose_files(self):
+        paths = choose_files()
+        return self._send_json({"ok": bool(paths), "paths": paths})
 
 
 # ==================================================================
