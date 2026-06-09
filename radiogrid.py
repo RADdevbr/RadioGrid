@@ -31,7 +31,6 @@ from urllib.parse import urlparse, parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from macos_bridge import (
-    ocr_patient_name,
     compose_panel,
     notify_macos,
     open_in_finder,
@@ -52,12 +51,21 @@ IMPORT_DIR = os.path.join(BASE_DIR, "imports")
 DEFAULT_PORT = 7842
 IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 PANEL_THRESHOLD = 4
+DEFAULT_PATIENT = "SEM NOME"  # fila usada quando nenhum nome é informado
 
 DEFAULT_CONFIG = {
     "watch_folders": ["~/Desktop", "~/Downloads"],
     "output_folder": "~/Desktop/RadioGrid_Output",
     "poll_interval_seconds": 2,
 }
+
+
+def resolve_patient(name):
+    """Nome do paciente é opcional: vazio/em branco cai na fila padrão."""
+    name = normalize_name(name or "")
+    if not name or name == "DESCONHECIDO":
+        return DEFAULT_PATIENT
+    return name
 
 
 # ==================================================================
@@ -271,9 +279,8 @@ class RadioGrid:
 
     # ----- Pipeline -----
     def on_new_image(self, path, source="watcher"):
-        name_raw = ocr_patient_name(path)
-        patient = normalize_name(name_raw)
-        self._add_image(patient, path, name_raw, source)
+        # Sem OCR: imagens detectadas vão para a fila padrão (nome opcional).
+        self._add_image(DEFAULT_PATIENT, path, DEFAULT_PATIENT, source)
 
     def _add_image(self, patient, path, name_raw, source):
         with self.lock:
@@ -431,11 +438,11 @@ class RadioGrid:
         - paths: lista de caminhos locais (vindos do seletor nativo do macOS).
         - files: lista de {"name": str, "data_base64": str} (upload do navegador).
 
+        O nome do paciente é opcional: se vazio, usa a fila padrão.
+
         Retorna {"ok": bool, "imported": int, "errors": [str]}.
         """
-        patient = normalize_name(patient or "")
-        if not patient or patient == "DESCONHECIDO":
-            return {"ok": False, "imported": 0, "errors": ["Informe o nome do paciente"]}
+        patient = resolve_patient(patient)
 
         os.makedirs(IMPORT_DIR, exist_ok=True)
         imported = 0
@@ -578,20 +585,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             return self._send_json(APP.update_config(body))
         if path == "/api/queue/add":
-            patient = normalize_name(body.get("patient", "DESCONHECIDO"))
+            patient = resolve_patient(body.get("patient", ""))
             img_path = body.get("path", "")
             if img_path:
                 APP._add_image(patient, img_path, patient, "manual")
             return self._send_json({"ok": True})
         if path == "/api/queue/clear":
-            APP.queue_clear(normalize_name(body.get("patient", "")))
+            APP.queue_clear(resolve_patient(body.get("patient", "")))
             return self._send_json({"ok": True})
         if path == "/api/queue/generate":
-            panel = APP.generate_panel(normalize_name(body.get("patient", "")))
+            panel = APP.generate_panel(resolve_patient(body.get("patient", "")))
             return self._send_json({"ok": panel is not None, "panel": panel})
         if path == "/api/queue/remove-image":
             APP.queue_remove_image(
-                normalize_name(body.get("patient", "")), body.get("path", "")
+                resolve_patient(body.get("patient", "")), body.get("path", "")
             )
             return self._send_json({"ok": True})
         if path == "/api/import":

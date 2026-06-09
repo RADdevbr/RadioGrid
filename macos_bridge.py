@@ -238,12 +238,49 @@ def _compose_stub(image_paths, output_path: str) -> bool:
         return False
 
 
+def _compose_pillow(image_paths, output_path: str) -> bool:
+    """Composição 2×2 600×600 com Pillow — multiplataforma, sem swiftc.
+
+    Cada imagem é redimensionada para caber em um tile de 300×300 (sem
+    distorção) e centralizada sobre fundo preto.
+    """
+    from PIL import Image
+
+    canvas = Image.new("RGB", (600, 600), (0, 0, 0))
+    # Origem no canto superior-esquerdo (ordem de leitura 2×2).
+    positions = [(0, 0), (300, 0), (0, 300), (300, 300)]
+    for i, path in enumerate(list(image_paths)[:4]):
+        try:
+            img = Image.open(path)
+            img = img.convert("RGB")
+        except Exception:
+            continue
+        img.thumbnail((300, 300))  # fit dentro do tile, mantém proporção
+        x, y = positions[i]
+        ox = x + (300 - img.width) // 2
+        oy = y + (300 - img.height) // 2
+        canvas.paste(img, (ox, oy))
+    try:
+        canvas.save(output_path, "PNG")
+        return True
+    except Exception:
+        return False
+
+
 def compose_panel(image_paths, output_path: str) -> bool:
     """Gera um painel 600×600 a partir de 1–4 imagens.
 
     Contrato: fundo preto, cada imagem fit-dentro-do-tile sem distorção,
     grava PNG em output_path. Retorna True em sucesso, False em falha.
+
+    Prioriza Pillow (multiplataforma, não depende de swiftc); se indisponível,
+    tenta a composição nativa via Swift no macOS; por fim, o stub.
     """
+    try:
+        import PIL  # noqa: F401
+        return _compose_pillow(image_paths, output_path)
+    except ImportError:
+        pass
     if is_macos():
         return _compose_macos(image_paths, output_path)
     return _compose_stub(image_paths, output_path)

@@ -113,6 +113,14 @@ class TestPipeline(unittest.TestCase):
         self.assertIsNotNone(panel)
         self.assertEqual(self.app.state["queues"][patient]["count"], 0)
 
+    def test_watcher_uses_default_queue_without_ocr(self):
+        # on_new_image não usa mais OCR: imagens vão para a fila padrão.
+        self.app.on_new_image(self.imgs[0])
+        self.assertIn(radiogrid.DEFAULT_PATIENT, self.app.state["queues"])
+        self.assertEqual(
+            self.app.state["queues"][radiogrid.DEFAULT_PATIENT]["count"], 1
+        )
+
 
 class TestImport(unittest.TestCase):
     """Importação manual: por caminho local e por upload base64."""
@@ -159,10 +167,14 @@ class TestImport(unittest.TestCase):
         self.assertEqual(res["imported"], 1)
         self.assertEqual(self.app.state["queues"]["MARIA SOUZA"]["count"], 1)
 
-    def test_import_requires_patient(self):
+    def test_import_without_patient_uses_default_queue(self):
         res = self.app.import_images("", paths=[self.src])
-        self.assertFalse(res["ok"])
-        self.assertEqual(res["imported"], 0)
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["imported"], 1)
+        self.assertIn(radiogrid.DEFAULT_PATIENT, self.app.state["queues"])
+        self.assertEqual(
+            self.app.state["queues"][radiogrid.DEFAULT_PATIENT]["count"], 1
+        )
 
     def test_import_rejects_non_image(self):
         txt = os.path.join(self.tmp, "nota.txt")

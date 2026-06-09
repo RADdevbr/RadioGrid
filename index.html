@@ -275,8 +275,8 @@
     <div class="collapsible-body hidden">
       <div class="config-card">
         <div class="config-row">
-          <label>Nome do paciente</label>
-          <input type="text" id="import-patient" placeholder="Ex.: João Silva — a imagem vai direto para esta fila">
+          <label>Nome do paciente (opcional)</label>
+          <input type="text" id="import-patient" placeholder="Opcional — deixe em branco para usar a fila padrão">
         </div>
         <div class="config-row">
           <label>Imagens</label>
@@ -507,10 +507,9 @@ function escapeJs(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\
 function cssEscape(s) { return s.replace(/(["\\])/g, '\\$1'); }
 
 // ---------- importação manual ----------
+// Nome é opcional: vazio cai na fila padrão ("SEM NOME") definida no backend.
 function importPatientName() {
-  const v = $('import-patient').value.trim();
-  if (!v) { toast('yellow', 'Informe o paciente', 'Digite o nome antes de importar'); return null; }
-  return v;
+  return $('import-patient').value.trim();
 }
 function readFileAsDataURL(file) {
   return new Promise((res, rej) => {
@@ -521,17 +520,18 @@ function readFileAsDataURL(file) {
   });
 }
 async function postImport(payload) {
+  const fila = payload.patient || 'SEM NOME';
   try {
     const r = await fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const j = await r.json();
-    if (j.imported > 0) toast('green', `✓ ${j.imported} imagem(ns) importada(s)`, payload.patient);
+    if (j.imported > 0) toast('green', `✓ ${j.imported} imagem(ns) importada(s)`, 'Fila: ' + fila);
     if (j.errors && j.errors.length) toast('yellow', 'Alguns itens não importados', j.errors.join(' · '));
     if (!j.imported && (!j.errors || !j.errors.length)) toast('yellow', 'Nada importado', 'Nenhuma imagem válida');
     await refreshState();
-  } catch { toast('yellow', 'Falha na importação', payload.patient); }
+  } catch { toast('yellow', 'Falha na importação', 'Fila: ' + fila); }
 }
 async function importNative() {
-  const patient = importPatientName(); if (!patient) return;
+  const patient = importPatientName();
   try {
     const r = await fetch('/api/choose-files');
     const j = await r.json();
@@ -540,7 +540,7 @@ async function importNative() {
   } catch { toast('yellow', 'Falha ao abrir seletor', 'Use "Escolher arquivos…" ou arraste imagens'); }
 }
 async function importBrowserFiles(fileList) {
-  const patient = importPatientName(); if (!patient) return;
+  const patient = importPatientName();
   const files = [];
   for (const f of fileList) {
     if (!f.type.startsWith('image/')) continue;
@@ -578,7 +578,7 @@ async function generateNow(patient) {
     const r = await fetch('/api/queue/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ patient }) });
     const j = await r.json();
     if (j.ok) toast('green', '✓ Painel gerado', patient);
-    else toast('yellow', 'Não foi possível gerar', 'Verifique se há imagens na fila (e swiftc no macOS)');
+    else toast('yellow', 'Não foi possível gerar', 'Verifique se há imagens na fila e abra o app pelo RadioGrid.command');
   } catch { toast('yellow', 'Falha ao gerar', patient); }
   await refreshState();
 }
