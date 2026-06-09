@@ -430,6 +430,76 @@ class RadioGrid:
              "images_today": self.images_detected_today},
         )
 
+    def queue_reorder(self, patient, ordered_paths):
+        """Reordena as imagens da fila conforme a lista de caminhos informada.
+
+        Caminhos não citados (se houver) são mantidos ao final, na ordem atual.
+        A ordem define o layout do painel 2×2 (1=cima-esq, 2=cima-dir,
+        3=baixo-esq, 4=baixo-dir).
+        """
+        with self.lock:
+            q = self.state["queues"].get(patient)
+            if not q:
+                return {"ok": False}
+            by_path = {i["path"]: i for i in q["images"]}
+            new_imgs = [by_path[p] for p in ordered_paths if p in by_path]
+            for img in q["images"]:
+                if img["path"] not in ordered_paths:
+                    new_imgs.append(img)
+            q["images"] = new_imgs
+            q["count"] = len(new_imgs)
+            self._save_state()
+        self.hub.broadcast(
+            "image_detected",
+            {"patient": patient, "path": "", "queue_size": q["count"],
+             "images_today": self.images_detected_today},
+        )
+        return {"ok": True}
+
+    def edit_panel(self, panel_path):
+        """Reabre um painel já gerado: traz suas imagens de volta para a fila.
+
+        Permite reordenar e gerar um novo output. Apenas as imagens-fonte que
+        ainda existem em disco são restauradas.
+        """
+        with self.lock:
+            panel = next(
+                (p for p in self.state["panels"] if p["path"] == panel_path), None
+            )
+            if not panel:
+                return {"ok": False, "error": "painel não encontrado"}
+            patient = panel["patient"]
+            now = datetime.now().isoformat(timespec="seconds")
+            imgs = []
+            for src in panel.get("sources", []):
+                if os.path.isfile(src):
+                    imgs.append({
+                        "path": src,
+                        "name_detected": patient,
+                        "name_raw": patient,
+                        "source": "edit",
+                        "added_at": now,
+                    })
+            if not imgs:
+                return {"ok": False, "error": "imagens-fonte não encontradas"}
+            q = self.state["queues"].setdefault(
+                patient,
+                {"images": [], "panel_count": 0, "count": 0,
+                 "last_image_at": None, "notified_at_4": False},
+            )
+            # Carrega exatamente as imagens do painel para edição.
+            q["images"] = imgs
+            q["count"] = len(imgs)
+            q["last_image_at"] = now
+            q["notified_at_4"] = True  # evita auto-geração; usuário gera ao concluir
+            self._save_state()
+        self.hub.broadcast(
+            "image_detected",
+            {"patient": patient, "path": "", "queue_size": len(imgs),
+             "images_today": self.images_detected_today},
+        )
+        return {"ok": True, "patient": patient, "restored": len(imgs)}
+
     def import_images(self, patient, paths=None, files=None):
         """Importa imagens manualmente para a fila de um paciente.
 
@@ -602,6 +672,13 @@ class Handler(BaseHTTPRequestHandler):
                 resolve_patient(body.get("patient", "")), body.get("path", "")
             )
             return self._send_json({"ok": True})
+        if path == "/api/queue/reorder":
+            return self._send_json(APP.queue_reorder(
+                resolve_patient(body.get("patient", "")),
+                body.get("paths", []),
+            ))
+        if path == "/api/panel/edit":
+            return self._send_json(APP.edit_panel(body.get("path", "")))
         if path == "/api/import":
             result = APP.import_images(
                 body.get("patient", ""),

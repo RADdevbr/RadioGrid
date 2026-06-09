@@ -100,3 +100,13 @@ fila padrão `SEM NOME`):
 As imagens importadas são copiadas para `imports/` e entram direto na fila.
 O painel é gerado automaticamente ao atingir 4 imagens, ou manualmente (com 1–4)
 pelo botão **"Gerar agora (n/4)"** de cada fila.
+
+## Reordenar e reeditar painéis
+
+- **Reordenar na fila:** arraste as miniaturas dentro de uma fila ativa para
+  definir a ordem do 2×2. O número em cada miniatura indica a posição
+  (1 = cima-esquerda, 2 = cima-direita, 3 = baixo-esquerda, 4 = baixo-direita).
+- **Reabrir um painel:** o botão **"Editar"** de um painel já gerado traz as
+  imagens-fonte de volta para a fila. Assim você pode reordenar e gerar um
+  **novo output** (`..._panel_2.png`, `..._panel_3.png`, …) sem perder o anterior.
+  (Funciona enquanto as imagens-fonte ainda existirem em disco.)
