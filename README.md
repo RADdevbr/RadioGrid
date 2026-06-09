@@ -73,3 +73,16 @@ python3 -m unittest test_radiogrid -v
    som no dashboard), gera o painel 2×2 em `output/` e zera a fila.
 5. O histórico de painéis fica disponível no dashboard com thumbnail, "Abrir no
    Finder" e "Copiar para a área de transferência".
+
+## Importação manual
+
+Além do watcher automático, é possível importar imagens manualmente pela seção
+**"Importar imagens"** do dashboard. Informe o nome do paciente e:
+
+- **Arraste e solte** imagens na área indicada, ou clique em **"Escolher
+  arquivos…"** (funciona em qualquer navegador/SO); ou
+- **"📁 Escolher (macOS)"** abre o seletor nativo de arquivos do Finder.
+
+As imagens importadas são copiadas para `imports/` e entram direto na fila do
+paciente informado (sem depender do OCR). Painéis podem ser gerados com 1–4
+imagens pelo botão **"Gerar agora (n/4)"** de cada fila.
