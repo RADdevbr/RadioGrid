@@ -105,8 +105,27 @@
   .config-row { margin-bottom: 16px; }
   .config-row:last-child { margin-bottom: 0; }
   .config-row label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
-  .dropzone { border: 1.5px dashed var(--border); border-radius: 8px; padding: 18px; min-height: 120px; color: var(--text-dim); font-size: 13px; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; transition: border-color .15s, background .15s; }
+  .dropzone { border: 1.5px dashed var(--border); border-radius: 8px; padding: 18px; min-height: 180px; color: var(--text-dim); font-size: 13px; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; transition: border-color .15s, background .15s; }
   .dropzone.drag { border-color: var(--accent); background: rgba(44,200,237,.08); color: var(--text); }
+
+  /* ---------- Mode switch ---------- */
+  .mode-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
+  .mode-switch button { border: none; border-radius: 0; background: var(--bg-elev); color: var(--text-dim); padding: 8px 18px; font-size: 13px; }
+  .mode-switch button.active { background: var(--accent); color: #04222b; font-weight: 600; }
+  .mode-switch button:not(.active):hover { color: var(--accent); }
+  .mode-pane { display: none; }
+  .mode-pane.active { display: block; }
+
+  /* ---------- Comparative ---------- */
+  .cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .cmp-col { border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .cmp-col > .cmp-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); font-weight: 600; margin-bottom: 8px; }
+  .cmp-date { display: flex; gap: 6px; margin-bottom: 10px; }
+  .cmp-date input[type=text] { flex: 1; }
+  .cmp-date input[type=date] { width: 40px; background: var(--bg); border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 6px; cursor: pointer; color-scheme: dark; }
+  .cmp-tiles { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 8px; }
+  .cmp-tiles .tile { aspect-ratio: 2 / 1; }
+  .cmp-add { width: 100%; padding: 8px; font-size: 12px; }
 
   /* ---------- Editor 2x2 ---------- */
   .editor-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 16px; max-width: 520px; }
@@ -190,39 +209,81 @@
 <main>
   <div class="privacy">As imagens nunca saem do seu dispositivo — nada é enviado à internet nem armazenado</div>
 
-  <!-- Importação -->
+  <!-- Nome do paciente -->
   <section>
-    <div class="section-title">Importar imagens</div>
+    <div class="section-title">Paciente</div>
     <div class="config-card">
       <div class="config-row">
         <label>Nome do paciente (opcional — usado só no nome do arquivo exportado)</label>
         <input type="text" id="patient" placeholder="Opcional — em branco usa &quot;SEM NOME&quot;">
       </div>
-      <div class="config-row">
-        <label>Imagens</label>
-        <div id="dropzone" class="dropzone">
-          <span>Arraste imagens aqui, ou</span>
-          <button onclick="document.getElementById('file-input').click()">Escolher arquivos…</button>
-        </div>
-        <input type="file" id="file-input" accept="image/*" multiple style="display:none" onchange="addFiles(this.files); this.value='';">
-      </div>
     </div>
   </section>
 
-  <!-- Editor 2x2 -->
+  <!-- Seletor de modo -->
   <section>
-    <div class="section-title">Painel 2×2</div>
-    <div class="editor-card">
-      <div class="editor-head">
-        <span class="mono">Arraste para reordenar</span>
-        <span class="count-badge"><b id="editor-count">0</b>/4</span>
+    <div class="mode-switch">
+      <button id="mode-panel" class="active" onclick="setMode('panel')">Painel</button>
+      <button id="mode-compare" onclick="setMode('compare')">Comparativo</button>
+    </div>
+
+    <!-- Modo Painel -->
+    <div class="mode-pane active" id="pane-panel">
+      <div class="config-card" style="margin-bottom:16px">
+        <div class="config-row" style="margin-bottom:0">
+          <label>Imagens</label>
+          <div id="dropzone" class="dropzone">
+            <span>Arraste imagens aqui, ou</span>
+            <button onclick="document.getElementById('file-input').click()">Escolher arquivos…</button>
+          </div>
+          <input type="file" id="file-input" accept="image/*" multiple style="display:none" onchange="addFiles(this.files); this.value='';">
+        </div>
       </div>
-      <div class="tiles" id="tiles"></div>
-      <div class="editor-actions">
-        <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
-        <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
+      <div class="editor-card">
+        <div class="editor-head">
+          <span class="mono">Arraste para reordenar</span>
+          <span class="count-badge"><b id="editor-count">0</b>/4</span>
+        </div>
+        <div class="tiles" id="tiles"></div>
+        <div class="editor-actions">
+          <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
+          <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
+        </div>
+        <div class="hint" id="panel-hint">1 imagem → 300×300 · 2 → 600×300 (1×2) · 3–4 → 600×600 (2×2)</div>
       </div>
-      <div class="hint">Posições: 1 = cima-esq · 2 = cima-dir · 3 = baixo-esq · 4 = baixo-dir · saída 600×600 PNG</div>
+    </div>
+
+    <!-- Modo Comparativo -->
+    <div class="mode-pane" id="pane-compare">
+      <div class="editor-card" style="max-width:560px">
+        <div class="cmp-grid">
+          <div class="cmp-col">
+            <div class="cmp-label">Data anterior</div>
+            <div class="cmp-date">
+              <input type="text" id="cmp-left-date" placeholder="ex.: 03/2025">
+              <input type="date" title="Escolher data" onchange="setDateFromPicker('cmp-left-date', this.value)">
+            </div>
+            <div class="cmp-tiles" id="cmp-left-tiles"></div>
+            <button class="cmp-add" onclick="document.getElementById('cmp-left-input').click()">+ Adicionar (máx. 2)</button>
+            <input type="file" id="cmp-left-input" accept="image/*" multiple style="display:none" onchange="addCompareFiles('left', this.files); this.value='';">
+          </div>
+          <div class="cmp-col">
+            <div class="cmp-label">Data atual</div>
+            <div class="cmp-date">
+              <input type="text" id="cmp-right-date" placeholder="ex.: 06/2026">
+              <input type="date" title="Escolher data" onchange="setDateFromPicker('cmp-right-date', this.value)">
+            </div>
+            <div class="cmp-tiles" id="cmp-right-tiles"></div>
+            <button class="cmp-add" onclick="document.getElementById('cmp-right-input').click()">+ Adicionar (máx. 2)</button>
+            <input type="file" id="cmp-right-input" accept="image/*" multiple style="display:none" onchange="addCompareFiles('right', this.files); this.value='';">
+          </div>
+        </div>
+        <div class="editor-actions">
+          <button class="primary" id="cmp-gen-btn" onclick="generateCompare()" disabled>Gerar comparativo</button>
+          <button class="danger" id="cmp-clear-btn" onclick="clearCompare()" disabled>Limpar</button>
+        </div>
+        <div class="hint">A data de cada lado vira legenda no topo da coluna · saída no máximo 600×600 PNG</div>
+      </div>
     </div>
   </section>
 
@@ -242,13 +303,14 @@
 const $ = (id) => document.getElementById(id);
 
 // Estado em memória — nada é persistido.
-let images = [];      // até 4: { id, name, el(HTMLImageElement) }
-let panels = [];      // gerados na sessão: { id, name, number, url(blob), at }
+let mode = 'panel';                 // 'panel' | 'compare'
+let images = [];                    // painel: até 4 { id, name, el }
+let cmp = { left: [], right: [] };  // comparativo: até 2 por lado { id, name, el }
+let panels = [];                    // gerados na sessão: { id, name, number, url(blob), at }
 let panelCounter = 0;
 let nextId = 1;
 
 const TILE = 300, CANVAS = 600;
-const POSITIONS = [[0, 0], [TILE, 0], [0, TILE], [TILE, TILE]]; // cima-esq, cima-dir, baixo-esq, baixo-dir
 
 // ---------- importação ----------
 function loadImage(file) {
@@ -306,7 +368,7 @@ function renderEditor() {
 
   const n = images.length;
   $('editor-count').textContent = n;
-  $('stat-loaded').textContent = n;
+  updateLoadedStat();
   $('gen-btn').textContent = `Gerar painel (${n}/4)`;
   $('gen-btn').disabled = n === 0;
   $('clear-btn').disabled = n === 0;
@@ -346,24 +408,69 @@ function bindReorder() {
   });
 }
 
-// ---------- composição 2x2 (Canvas) ----------
-// Mesma regra do app nativo: fundo preto, cada imagem encaixada no tile sem
+// ---------- composição (Canvas) ----------
+// Mesma regra do app nativo: fundo preto, cada imagem encaixada na célula sem
 // distorção (contain) e centralizada.
-function composePanel() {
+function drawContain(ctx, el, x, y, w, h) {
+  const iw = el.naturalWidth || el.width, ih = el.naturalHeight || el.height;
+  if (!iw || !ih) return;
+  const s = Math.min(w / iw, h / ih);
+  const dw = iw * s, dh = ih * s;
+  ctx.drawImage(el, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+}
+
+// Saída adaptável ao nº de imagens, sem deixar linha preta sobrando:
+//   1 → 300×300 · 2 → 600×300 (1×2) · 3–4 → 600×600 (2×2).
+function composeAdaptive(imgs) {
+  const n = Math.min(imgs.length, 4);
+  let cols, rows;
+  if (n <= 1) { cols = 1; rows = 1; }
+  else if (n === 2) { cols = 2; rows = 1; }
+  else { cols = 2; rows = 2; }
   const canvas = document.createElement('canvas');
-  canvas.width = CANVAS; canvas.height = CANVAS;
+  canvas.width = cols * TILE; canvas.height = rows * TILE;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, CANVAS, CANVAS);
-  images.slice(0, 4).forEach((img, i) => {
-    const el = img.el;
-    const iw = el.naturalWidth || el.width, ih = el.naturalHeight || el.height;
-    if (!iw || !ih) return;
-    const s = Math.min(TILE / iw, TILE / ih);
-    const w = iw * s, h = ih * s;
-    const [x, y] = POSITIONS[i];
-    ctx.drawImage(el, x + (TILE - w) / 2, y + (TILE - h) / 2, w, h);
-  });
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < n; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    drawContain(ctx, imgs[i].el, col * TILE, row * TILE, TILE, TILE);
+  }
+  return canvas;
+}
+
+// Comparativo: duas colunas (anterior | atual), cada uma com 1–2 imagens
+// empilhadas e a data como legenda no topo. Teto de 600×600.
+const CAP_H = 30; // faixa da legenda (compacta)
+function composeCompare(left, right, leftLabel, rightLabel) {
+  const colW = TILE;                                  // 300
+  const rows = Math.max(left.length, right.length, 1); // 1 ou 2
+  const tileH = rows === 1 ? TILE : Math.floor((CANVAS - CAP_H) / rows); // 300 ou 285
+  const canvas = document.createElement('canvas');
+  canvas.width = 2 * colW;                            // 600
+  canvas.height = CAP_H + tileH * rows;              // 330 (1 linha) ou 600 (2 linhas)
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const columns = [{ x: 0, imgs: left, label: leftLabel }, { x: colW, imgs: right, label: rightLabel }];
+  for (const c of columns) {
+    // faixa da legenda
+    ctx.fillStyle = '#161B22';
+    ctx.fillRect(c.x, 0, colW, CAP_H);
+    ctx.fillStyle = '#E6EDF3';
+    ctx.font = '600 15px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(c.label, c.x + colW / 2, CAP_H / 2, colW - 12);
+    // imagens da coluna
+    c.imgs.slice(0, rows).forEach((img, r) => {
+      drawContain(ctx, img.el, c.x, CAP_H + r * tileH, colW, tileH);
+    });
+  }
+  // linha divisória sutil entre as colunas
+  ctx.strokeStyle = '#30363D';
+  ctx.beginPath(); ctx.moveTo(colW, 0); ctx.lineTo(colW, canvas.height); ctx.stroke();
   return canvas;
 }
 
@@ -375,19 +482,23 @@ function safeName(raw) {
 
 function generatePanel() {
   if (!images.length) return;
-  const canvas = composePanel();
+  emitPanel(composeAdaptive(images), 'panel');
+  clearEditor();
+}
+
+// Compõe → registra na galeria → baixa. `kind` define o sufixo do arquivo.
+function emitPanel(canvas, kind) {
   const name = safeName($('patient').value);
   panelCounter++;
   const number = panelCounter;
+  const suffix = kind === 'compare' ? 'comparativo' : 'panel';
   canvas.toBlob((blob) => {
     if (!blob) { toast('red', 'Falha ao gerar', 'Não foi possível compor o PNG'); return; }
     const url = URL.createObjectURL(blob);
-    const panel = { id: nextId++, name, number, url, at: new Date() };
-    panels.unshift(panel);
+    panels.unshift({ id: nextId++, name, number, url, at: new Date() });
     renderPanels();
-    triggerDownload(url, `${name}_panel_${number}.png`);
-    toast('green', '✓ Painel gerado', `${name} · #${number} — baixado`);
-    clearEditor();
+    triggerDownload(url, `${name}_${suffix}_${number}.png`);
+    toast('green', '✓ Imagem gerada', `${name} · #${number} — baixada`);
   }, 'image/png');
 }
 
@@ -443,6 +554,80 @@ function removePanel(id) {
   renderPanels();
 }
 
+// ---------- modo ----------
+function setMode(m) {
+  mode = m;
+  $('mode-panel').classList.toggle('active', m === 'panel');
+  $('mode-compare').classList.toggle('active', m === 'compare');
+  $('pane-panel').classList.toggle('active', m === 'panel');
+  $('pane-compare').classList.toggle('active', m === 'compare');
+  updateLoadedStat();
+}
+function updateLoadedStat() {
+  $('stat-loaded').textContent = mode === 'panel'
+    ? images.length
+    : (cmp.left.length + cmp.right.length);
+}
+
+// ---------- comparativo ----------
+function setDateFromPicker(inputId, value) {
+  if (!value) return;
+  const [y, m, d] = value.split('-');
+  $(inputId).value = `${d}/${m}/${y}`;
+}
+
+async function addCompareFiles(side, fileList) {
+  const list = cmp[side];
+  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  if (!files.length) { toast('yellow', 'Nenhuma imagem', 'Selecione arquivos de imagem'); return; }
+  let added = 0, skipped = 0;
+  for (const f of files) {
+    if (list.length >= 2) { skipped++; continue; }
+    const el = await loadImage(f);
+    if (!el) { skipped++; continue; }
+    list.push({ id: nextId++, name: f.name, el });
+    added++;
+  }
+  renderCompare();
+  if (skipped) toast('yellow', `${skipped} ignorada(s)`, 'Cada lado comporta no máximo 2 imagens');
+}
+
+function renderCompareColumn(side) {
+  const tiles = $(side === 'left' ? 'cmp-left-tiles' : 'cmp-right-tiles');
+  tiles.innerHTML = '';
+  cmp[side].forEach((img) => {
+    const tile = document.createElement('div');
+    tile.className = 'tile filled';
+    const rm = document.createElement('button');
+    rm.className = 'remove'; rm.textContent = '×';
+    rm.onclick = (e) => { e.stopPropagation(); cmp[side] = cmp[side].filter(x => x.id !== img.id); renderCompare(); };
+    const el = img.el.cloneNode();
+    el.draggable = false;
+    el.onclick = () => showLightbox(el.src);
+    tile.appendChild(el); tile.appendChild(rm);
+    tiles.appendChild(tile);
+  });
+}
+function renderCompare() {
+  renderCompareColumn('left');
+  renderCompareColumn('right');
+  const total = cmp.left.length + cmp.right.length;
+  $('cmp-gen-btn').disabled = total === 0;
+  $('cmp-clear-btn').disabled = total === 0;
+  updateLoadedStat();
+}
+function clearCompare() {
+  cmp = { left: [], right: [] };
+  renderCompare();
+}
+function generateCompare() {
+  if (!cmp.left.length && !cmp.right.length) return;
+  const leftLabel = $('cmp-left-date').value.trim() || 'Anterior';
+  const rightLabel = $('cmp-right-date').value.trim() || 'Atual';
+  emitPanel(composeCompare(cmp.left, cmp.right, leftLabel, rightLabel), 'compare');
+  clearCompare();
+}
+
 // ---------- dropzone ----------
 function setupDropzone() {
   const dz = $('dropzone');
@@ -453,11 +638,12 @@ function setupDropzone() {
     const files = (e.dataTransfer && e.dataTransfer.files) || [];
     if (files.length) addFiles(files);
   });
-  // Permite soltar imagens em qualquer lugar da página.
+  // Permite soltar imagens em qualquer lugar da página (apenas no modo Painel).
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => {
     if (e.target.closest('#dropzone')) return; // já tratado
     e.preventDefault();
+    if (mode !== 'panel') return;              // no comparativo use os botões de cada lado
     const files = (e.dataTransfer && e.dataTransfer.files) || [];
     if (files.length) addFiles(files);
   });
@@ -481,6 +667,7 @@ function dismiss(t) { if (!t.parentNode) return; t.classList.add('out'); setTime
 // ---------- init ----------
 (function init() {
   renderEditor();
+  renderCompare();
   renderPanels();
   setupDropzone();
 })();
