@@ -261,7 +261,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">1 → proporção original · 2 → 1×2/2×1 sem barras · 3–4 → 600×600 (2×2) · ao chegar em 4 gera sozinho (sem baixar)</div>
+        <div class="hint" id="panel-hint">1 → proporção original · 2 → 600×600 (1×2 ou 2×1, preenche o quadrado) · 3–4 → 600×600 (2×2) · ao chegar em 4 gera sozinho</div>
       </div>
     </div>
 
@@ -319,7 +319,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.1.0';   // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.2.0';   // marcador de versão exibido no cabeçalho
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
@@ -460,39 +460,44 @@ function composeSingle(im) {
   return canvas;
 }
 
-// 2 imagens, sem deformar e sem barras pretas:
-//   'row' (1×2) → mesma ALTURA STRIP_SIDE, larguras pela proporção (fica largo).
-//   'col' (2×1) → mesma LARGURA STRIP_SIDE, alturas pela proporção (fica alto).
+// Desenha a imagem cobrindo toda a célula (proporção preservada, recorta o
+// excesso e centraliza) — preenche sem barras pretas e sem distorcer.
+function drawCover(ctx, el, x, y, w, h) {
+  const iw = el.naturalWidth || el.width, ih = el.naturalHeight || el.height;
+  if (!iw || !ih) return;
+  const s = Math.max(w / iw, h / ih);
+  const dw = iw * s, dh = ih * s;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.drawImage(el, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  ctx.restore();
+}
+
+// 2 imagens → quadrado 600×600 completo, cada uma ocupando metade:
+//   'row' (1×2) → duas células 300×600 lado a lado.
+//   'col' (2×1) → duas células 600×300 empilhadas.
 function composeStrip(imgs, orientation) {
-  const dims = imgs.map(imgDim);
   const canvas = document.createElement('canvas');
-  let parts;
-  if (orientation === 'row') {
-    parts = dims.map(d => ({ w: Math.max(1, Math.round(STRIP_SIDE * d.w / d.h)), h: STRIP_SIDE }));
-    canvas.width = parts.reduce((s, p) => s + p.w, 0);
-    canvas.height = STRIP_SIDE;
-  } else {
-    parts = dims.map(d => ({ w: STRIP_SIDE, h: Math.max(1, Math.round(STRIP_SIDE * d.h / d.w)) }));
-    canvas.width = STRIP_SIDE;
-    canvas.height = parts.reduce((s, p) => s + p.h, 0);
-  }
+  canvas.width = CANVAS; canvas.height = CANVAS;     // 600×600 fixo
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  let x = 0, y = 0;
-  imgs.forEach((im, i) => {
-    ctx.drawImage(im.el, x, y, parts[i].w, parts[i].h);
-    if (orientation === 'row') x += parts[i].w; else y += parts[i].h;
-  });
+  ctx.fillRect(0, 0, CANVAS, CANVAS);
+  const half = CANVAS / 2;
+  const cells = orientation === 'row'
+    ? [[0, 0, half, CANVAS], [half, 0, half, CANVAS]]   // 300×600 cada
+    : [[0, 0, CANVAS, half], [0, half, CANVAS, half]];  // 600×300 cada
+  imgs.slice(0, 2).forEach((im, i) => drawCover(ctx, im.el, ...cells[i]));
   return canvas;
 }
 
-// Auto: escolhe a orientação cujo resultado fica mais próximo de um quadrado.
+// Auto: escolhe a orientação cuja célula combina melhor com a proporção das
+// imagens (menos recorte). Verticais → 1×2 (célula 300×600); horizontais → 2×1.
 function autoOrientation(imgs) {
   const ar = imgs.map(im => { const d = imgDim(im); return d.w / d.h; });
-  const rowAspect = ar.reduce((s, a) => s + a, 0);        // W/H do 1×2
-  const colAspect = 1 / ar.reduce((s, a) => s + 1 / a, 0); // W/H do 2×1
-  return Math.abs(Math.log(rowAspect)) <= Math.abs(Math.log(colAspect)) ? 'row' : 'col';
+  const avg = ar.reduce((s, a) => s + a, 0) / ar.length;
+  const rowCost = Math.abs(Math.log(avg / 0.5)); // célula 300×600 → ar 0.5
+  const colCost = Math.abs(Math.log(avg / 2));   // célula 600×300 → ar 2.0
+  return rowCost <= colCost ? 'row' : 'col';
 }
 function resolveLayout(imgs) {
   return panelLayout === 'auto' ? autoOrientation(imgs) : panelLayout;
@@ -558,12 +563,14 @@ function safeName(raw) {
 
 function generatePanel() {
   if (!images.length) return;
-  emitPanel(composeAdaptive(images), 'panel');
+  // Guarda as fontes (referências em memória) para o "Reabrir" reeditar.
+  const restore = { kind: 'panel', images: images.slice(), layout: panelLayout };
+  emitPanel(composeAdaptive(images), 'panel', restore);
   clearEditor();
 }
 
-// Compõe → registra na galeria → baixa. `kind` define o sufixo do arquivo.
-function emitPanel(canvas, kind) {
+// Compõe → registra na galeria. `kind` define o sufixo; `restore` permite reabrir.
+function emitPanel(canvas, kind, restore) {
   const name = safeName($('patient').value);
   panelCounter++;
   const number = panelCounter;
@@ -572,7 +579,7 @@ function emitPanel(canvas, kind) {
     if (!blob) { toast('red', 'Falha ao gerar', 'Não foi possível compor o PNG'); return; }
     const url = URL.createObjectURL(blob);
     const file = `${name}_${suffix}_${number}.png`;
-    panels.unshift({ id: nextId++, name, number, url, file, at: new Date() });
+    panels.unshift({ id: nextId++, name, number, url, file, restore, at: new Date() });
     renderPanels();
     toast('green', '✓ Imagem gerada', `${name} · #${number} — veja na galeria abaixo`);
   }, 'image/png');
@@ -620,15 +627,25 @@ function renderPanels() {
   }
 }
 
-// Reabre um painel: recoloca a imagem composta como uma única fonte na fila.
-// (Como nada é armazenado, não há as 4 imagens-fonte originais; trazemos o
-// painel gerado de volta para reuso/reexport.)
+// Reabre um painel restaurando suas imagens-fonte (e layout/datas) no editor,
+// para reordenar/ajustar e gerar de novo. As fontes ficam em memória na sessão.
 function reopenPanel(p) {
-  if (images.length >= 4) { toast('yellow', 'Fila cheia', 'Limpe a fila antes de reabrir'); return; }
-  const el = new Image();
-  el.onload = () => { images.push({ id: nextId++, name: `painel_${p.number}.png`, el }); renderEditor(); };
-  el.src = p.url;
-  toast('green', '✏️ Painel reaberto', 'Adicionado à fila para reuso');
+  const r = p.restore;
+  if (!r) { toast('yellow', 'Não dá para reabrir', 'Painel gerado numa versão antiga (sem fontes).'); return; }
+  if (r.kind === 'compare') {
+    setMode('compare');
+    cmp = { left: r.left.slice(), right: r.right.slice() };
+    $('cmp-left-date').value = r.leftDate || '';
+    $('cmp-right-date').value = r.rightDate || '';
+    renderCompare();
+  } else {
+    setMode('panel');
+    images = r.images.slice();
+    setLayout(r.layout || 'auto');
+    renderEditor();
+  }
+  toast('green', '✏️ Reaberto para edição', 'Imagens-fonte restauradas — ajuste e gere de novo');
+  document.querySelector('.mode-switch').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function removePanel(id) {
@@ -710,9 +727,10 @@ function clearCompare() {
 }
 function generateCompare() {
   if (!cmp.left.length && !cmp.right.length) return;
-  const leftLabel = $('cmp-left-date').value.trim() || 'Anterior';
-  const rightLabel = $('cmp-right-date').value.trim() || 'Atual';
-  emitPanel(composeCompare(cmp.left, cmp.right, leftLabel, rightLabel), 'compare');
+  const leftDate = $('cmp-left-date').value.trim();
+  const rightDate = $('cmp-right-date').value.trim();
+  const restore = { kind: 'compare', left: cmp.left.slice(), right: cmp.right.slice(), leftDate, rightDate };
+  emitPanel(composeCompare(cmp.left, cmp.right, leftDate || 'Anterior', rightDate || 'Atual'), 'compare', restore);
   clearCompare();
 }
 
