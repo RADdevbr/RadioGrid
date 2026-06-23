@@ -198,6 +198,30 @@
     display: none; align-items: center; justify-content: center; cursor: zoom-out;
   }
   #lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+
+  /* ---------- Tile canvas + botão ajustar ---------- */
+  .tilecanvas { width: 100%; height: 100%; display: block; object-fit: contain; }
+  .tile .adjust-btn {
+    position: absolute; bottom: 4px; right: 4px; z-index: 3;
+    background: rgba(0,0,0,.7); border: none; border-radius: 4px;
+    color: var(--accent); padding: 1px 7px; font-size: 13px; line-height: 1.4; display: none;
+  }
+  .tile.filled:hover .adjust-btn { display: block; }
+
+  /* ---------- Adjust overlay ---------- */
+  .adjust-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 210;
+    display: none; align-items: center; justify-content: center;
+  }
+  .adjust-box { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; padding: 18px; max-width: 92vw; }
+  .adjust-title { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 12px; }
+  .adjust-stage { display: flex; align-items: center; justify-content: center; background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+  #adjust-canvas { max-width: 80vw; max-height: 60vh; touch-action: none; cursor: grab; border-radius: 4px; }
+  #adjust-canvas:active { cursor: grabbing; }
+  .adjust-ctrls { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .adjust-ctrls input[type=range] { flex: 1; accent-color: var(--accent); }
+  .adjust-lbl { font-family: var(--mono); font-size: 11px; color: var(--text-dim); min-width: 40px; }
+  .adjust-hint { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 10px; text-align: center; }
 </style>
 </head>
 <body>
@@ -266,7 +290,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">1 → proporção original · 2 → 600×600 (1×2/2×1; Cortar preenche, Encaixar mantém tudo) · 3–4 → 600×600 (2×2)</div>
+        <div class="hint" id="panel-hint">1 → proporção original · 2 → 600×600 (1×2/2×1; Cortar/Encaixar) · 3–4 → 600×600 (2×2) · passe o mouse no tile e use ✥ para pan/zoom</div>
       </div>
     </div>
 
@@ -321,10 +345,35 @@
 <div id="toasts"></div>
 <div id="lightbox" onclick="this.style.display='none'"><img id="lightbox-img" src="" alt=""></div>
 
+<!-- Overlay de ajuste de enquadramento (pan/zoom) -->
+<div id="adjust" class="adjust-overlay">
+  <div class="adjust-box" onclick="event.stopPropagation()">
+    <div class="adjust-title">Ajustar enquadramento</div>
+    <div class="adjust-stage"><canvas id="adjust-canvas"></canvas></div>
+    <div class="adjust-ctrls">
+      <span class="adjust-lbl">Zoom</span>
+      <button onclick="adjustZoom(-0.12)">−</button>
+      <input type="range" id="adjust-zoom" min="1" max="4" step="0.01" value="1" oninput="adjustSetZoom(this.value)">
+      <button onclick="adjustZoom(0.12)">+</button>
+    </div>
+    <div class="adjust-ctrls">
+      <span class="adjust-lbl">Girar</span>
+      <button onclick="adjustRotate(-90)" title="Girar 90° à esquerda">↺</button>
+      <input type="range" id="adjust-rot" min="-180" max="180" step="1" value="0" oninput="adjustSetRot(this.value)">
+      <button onclick="adjustRotate(90)" title="Girar 90° à direita">↻</button>
+    </div>
+    <div class="adjust-ctrls">
+      <button onclick="adjustReset()">Reset</button>
+      <button class="primary" onclick="adjustClose()">OK</button>
+    </div>
+    <div class="adjust-hint">Arraste para mover · roda/pinça/barra para zoom · ↺ ↻ giram 90° (barra ajusta fino)</div>
+  </div>
+</div>
+
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.3.0';   // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.5.0';   // marcador de versão exibido no cabeçalho
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
@@ -357,7 +406,7 @@ async function addFiles(fileList) {
     if (images.length >= 4) { skipped++; continue; }
     const el = await loadImage(f);
     if (!el) { skipped++; continue; }
-    images.push({ id: nextId++, name: f.name, el });
+    images.push({ id: nextId++, name: f.name, el, tf: defaultTf() });
     added++;
   }
   renderEditor();
@@ -381,10 +430,17 @@ function renderEditor() {
       const pos = document.createElement('span'); pos.className = 'pos'; pos.textContent = i + 1;
       const rm = document.createElement('button'); rm.className = 'remove'; rm.textContent = '×';
       rm.onclick = (e) => { e.stopPropagation(); removeImage(img.id); };
-      const el = img.el.cloneNode();
-      el.draggable = false;
-      el.onclick = () => showLightbox(el.src);
-      tile.appendChild(el); tile.appendChild(pos); tile.appendChild(rm);
+      const thumb = tileThumb(img);
+      const canAdjust = images.length >= 2; // 1 imagem sai na proporção original (sem célula)
+      thumb.onclick = () => { if (canAdjust) { const c = panelCell(); openAdjust(img, c.aspect, c.fit); } else showLightbox(img.el.src); };
+      tile.appendChild(thumb); tile.appendChild(pos);
+      if (canAdjust) {
+        const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = '✥';
+        adjb.title = 'Ajustar enquadramento (pan/zoom)';
+        adjb.onclick = (e) => { e.stopPropagation(); const c = panelCell(); openAdjust(img, c.aspect, c.fit); };
+        tile.appendChild(adjb);
+      }
+      tile.appendChild(rm);
     } else {
       tile.className = 'tile';
       const plus = document.createElement('span'); plus.className = 'plus'; plus.textContent = '+';
@@ -438,14 +494,33 @@ function bindReorder() {
 }
 
 // ---------- composição (Canvas) ----------
-// Mesma regra do app nativo: fundo preto, cada imagem encaixada na célula sem
-// distorção (contain) e centralizada.
-function drawContain(ctx, el, x, y, w, h) {
+// Desenha a imagem numa célula aplicando o enquadramento (pan/zoom) de im.tf.
+//   fit 'cover'   → preenche a célula (escala = max), recorta o excesso.
+//   fit 'contain' → cabe inteira (escala = min); com zoom>1 vira recorte.
+// tf = { zoom≥1, cx, cy } onde (cx,cy) em 0–1 é o ponto levado ao centro da
+// célula. Prende dentro da célula quando a imagem a cobre (sem borda preta).
+function drawCell(ctx, im, x, y, w, h, fit) {
+  const el = im.el;
   const iw = el.naturalWidth || el.width, ih = el.naturalHeight || el.height;
   if (!iw || !ih) return;
-  const s = Math.min(w / iw, h / ih);
-  const dw = iw * s, dh = ih * s;
-  ctx.drawImage(el, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  const tf = im.tf || { zoom: 1, cx: 0.5, cy: 0.5, rot: 0 };
+  const rad = (tf.rot || 0) * Math.PI / 180;
+  const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
+  const ew = iw * ac + ih * as;          // bounding box girado (largura)
+  const eh = iw * as + ih * ac;          // bounding box girado (altura)
+  const base = fit === 'contain' ? Math.min(w / ew, h / eh) : Math.max(w / ew, h / eh);
+  const s = base * (tf.zoom || 1);
+  const dw = ew * s, dh = eh * s;        // footprint girado na célula
+  let dx = x + w / 2 - (tf.cx ?? 0.5) * dw;
+  let dy = y + h / 2 - (tf.cy ?? 0.5) * dh;
+  dx = dw >= w ? Math.min(x, Math.max(x + w - dw, dx)) : x + (w - dw) / 2;
+  dy = dh >= h ? Math.min(y, Math.max(y + h - dh, dy)) : y + (h - dh) / 2;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.translate(dx + dw / 2, dy + dh / 2);
+  ctx.rotate(rad);
+  ctx.drawImage(el, -iw * s / 2, -ih * s / 2, iw * s, ih * s);
+  ctx.restore();
 }
 
 const STRIP_SIDE = 600; // lado normalizado (altura no 1×2, largura no 2×1)
@@ -466,19 +541,6 @@ function composeSingle(im) {
   return canvas;
 }
 
-// Desenha a imagem cobrindo toda a célula (proporção preservada, recorta o
-// excesso e centraliza) — preenche sem barras pretas e sem distorcer.
-function drawCover(ctx, el, x, y, w, h) {
-  const iw = el.naturalWidth || el.width, ih = el.naturalHeight || el.height;
-  if (!iw || !ih) return;
-  const s = Math.max(w / iw, h / ih);
-  const dw = iw * s, dh = ih * s;
-  ctx.save();
-  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-  ctx.drawImage(el, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
-  ctx.restore();
-}
-
 // 2 imagens → quadrado 600×600 completo, cada uma ocupando metade:
 //   'row' (1×2) → duas células 300×600 lado a lado.
 //   'col' (2×1) → duas células 600×300 empilhadas.
@@ -492,8 +554,7 @@ function composeStrip(imgs, orientation, fit) {
   const cells = orientation === 'row'
     ? [[0, 0, half, CANVAS], [half, 0, half, CANVAS]]   // 300×600 cada
     : [[0, 0, CANVAS, half], [0, half, CANVAS, half]];  // 600×300 cada
-  const draw = fit === 'contain' ? drawContain : drawCover; // cortar (cover) ou encaixar (contain)
-  imgs.slice(0, 2).forEach((im, i) => draw(ctx, im.el, ...cells[i]));
+  imgs.slice(0, 2).forEach((im, i) => drawCell(ctx, im, ...cells[i], fit));
   return canvas;
 }
 
@@ -522,7 +583,7 @@ function composeAdaptive(imgs) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   for (let i = 0; i < n; i++) {
-    drawContain(ctx, imgs[i].el, (i % 2) * TILE, Math.floor(i / 2) * TILE, TILE, TILE);
+    drawCell(ctx, imgs[i], (i % 2) * TILE, Math.floor(i / 2) * TILE, TILE, TILE, 'contain');
   }
   return canvas;
 }
@@ -553,7 +614,7 @@ function composeCompare(left, right, leftLabel, rightLabel) {
     ctx.fillText(c.label, c.x + colW / 2, CAP_H / 2, colW - 12);
     // imagens da coluna
     c.imgs.slice(0, rows).forEach((img, r) => {
-      drawContain(ctx, img.el, c.x, CAP_H + r * tileH, colW, tileH);
+      drawCell(ctx, img, c.x, CAP_H + r * tileH, colW, tileH, 'contain');
     });
   }
   // linha divisória sutil entre as colunas
@@ -702,7 +763,7 @@ async function addCompareFiles(side, fileList) {
     if (list.length >= 2) { skipped++; continue; }
     const el = await loadImage(f);
     if (!el) { skipped++; continue; }
-    list.push({ id: nextId++, name: f.name, el });
+    list.push({ id: nextId++, name: f.name, el, tf: defaultTf() });
     added++;
   }
   renderCompare();
@@ -718,10 +779,12 @@ function renderCompareColumn(side) {
     const rm = document.createElement('button');
     rm.className = 'remove'; rm.textContent = '×';
     rm.onclick = (e) => { e.stopPropagation(); cmp[side] = cmp[side].filter(x => x.id !== img.id); renderCompare(); };
-    const el = img.el.cloneNode();
-    el.draggable = false;
-    el.onclick = () => showLightbox(el.src);
-    tile.appendChild(el); tile.appendChild(rm);
+    const thumb = tileThumb(img);
+    thumb.onclick = () => { const c = compareCell(); openAdjust(img, c.aspect, c.fit); };
+    const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = '✥';
+    adjb.title = 'Ajustar enquadramento (pan/zoom)';
+    adjb.onclick = (e) => { e.stopPropagation(); const c = compareCell(); openAdjust(img, c.aspect, c.fit); };
+    tile.appendChild(thumb); tile.appendChild(adjb); tile.appendChild(rm);
     tiles.appendChild(tile);
   });
 }
@@ -786,6 +849,136 @@ function toast(color, title, body) {
   setTimeout(() => dismiss(t), 4500);
 }
 function dismiss(t) { if (!t.parentNode) return; t.classList.add('out'); setTimeout(() => t.remove(), 300); }
+
+// ---------- pan & zoom (enquadramento por imagem) ----------
+function defaultTf() { return { zoom: 1, cx: 0.5, cy: 0.5, rot: 0 }; }
+
+// Miniatura do tile refletindo o enquadramento (cover + tf) num quadrado.
+function tileThumb(im) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 200;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 200, 200);
+  drawCell(ctx, im, 0, 0, 200, 200, 'cover');
+  c.className = 'tilecanvas';
+  return c;
+}
+
+// Proporção (w/h) e fit da célula de cada contexto, para o overlay ser fiel.
+function panelCell() {
+  const n = images.length;
+  if (n === 2) { const o = resolveLayout(images); return { aspect: o === 'row' ? 0.5 : 2, fit: fitMode }; }
+  return { aspect: 1, fit: 'contain' }; // 2×2
+}
+function compareCell() {
+  const rows = Math.max(cmp.left.length, cmp.right.length, 1);
+  const tileH = rows === 1 ? TILE : Math.floor((CANVAS - CAP_H) / rows);
+  return { aspect: TILE / tileH, fit: 'contain' };
+}
+
+let adj = null; // { im, fit, draw() }
+
+function openAdjust(im, aspect, fit) {
+  const canvas = $('adjust-canvas');
+  const LONG = 420;
+  canvas.width = aspect >= 1 ? LONG : Math.round(LONG * aspect);
+  canvas.height = aspect >= 1 ? Math.round(LONG / aspect) : LONG;
+  const draw = () => {
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawCell(ctx, im, 0, 0, canvas.width, canvas.height, fit);
+  };
+  adj = { im, fit, draw };
+  $('adjust-zoom').value = im.tf.zoom;
+  $('adjust-rot').value = im.tf.rot || 0;
+  draw();
+  $('adjust').style.display = 'flex';
+}
+function adjustClose() {
+  $('adjust').style.display = 'none';
+  adj = null;
+  renderEditor(); renderCompare();   // atualiza as miniaturas
+}
+function adjustReset() {
+  if (!adj) return;
+  adj.im.tf = defaultTf();
+  $('adjust-zoom').value = 1;
+  $('adjust-rot').value = 0;
+  adj.draw();
+}
+function adjustSetRot(v) {
+  if (!adj) return;
+  adj.im.tf.rot = parseFloat(v) || 0;
+  adj.draw();
+}
+function adjustRotate(delta) {
+  if (!adj) return;
+  let r = (adj.im.tf.rot || 0) + delta;
+  r = ((r + 180) % 360 + 360) % 360 - 180;   // normaliza para (-180, 180]
+  adj.im.tf.rot = r;
+  $('adjust-rot').value = r;
+  adj.draw();
+}
+function adjustSetZoom(v) {
+  if (!adj) return;
+  adj.im.tf.zoom = Math.max(1, Math.min(4, parseFloat(v) || 1));
+  adj.draw();
+}
+function adjustZoom(delta) {
+  if (!adj) return;
+  adjustSetZoom((adj.im.tf.zoom || 1) + delta);
+  $('adjust-zoom').value = adj.im.tf.zoom;
+}
+
+// Pan/zoom por ponteiro (mouse + touch) com pinça de 2 dedos.
+(function setupAdjustGestures() {
+  const stage = () => $('adjust-canvas');
+  const pointers = new Map();
+  let pinchDist = 0;
+  function toInternalDelta(dxClient, dyClient) {
+    const c = stage(); const r = c.getBoundingClientRect();
+    return { dx: dxClient * (c.width / r.width), dy: dyClient * (c.height / r.height) };
+  }
+  function pan(dxClient, dyClient) {
+    if (!adj) return;
+    const c = stage();
+    const { dx, dy } = toInternalDelta(dxClient, dyClient);
+    const d = imgDim(adj.im);
+    const rad = (adj.im.tf.rot || 0) * Math.PI / 180;
+    const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
+    const ew = d.w * ac + d.h * as, eh = d.w * as + d.h * ac;
+    const base = adj.fit === 'contain'
+      ? Math.min(c.width / ew, c.height / eh)
+      : Math.max(c.width / ew, c.height / eh);
+    const dw = ew * base * adj.im.tf.zoom, dh = eh * base * adj.im.tf.zoom;
+    adj.im.tf.cx = Math.max(0, Math.min(1, adj.im.tf.cx - dx / dw));
+    adj.im.tf.cy = Math.max(0, Math.min(1, adj.im.tf.cy - dy / dh));
+    adj.draw();
+  }
+  function bind() {
+    const c = stage();
+    c.addEventListener('pointerdown', (e) => { c.setPointerCapture(e.pointerId); pointers.set(e.pointerId, e); });
+    c.addEventListener('pointermove', (e) => {
+      if (!adj || !pointers.has(e.pointerId)) return;
+      const prev = pointers.get(e.pointerId);
+      if (pointers.size >= 2) {
+        pointers.set(e.pointerId, e);
+        const pts = [...pointers.values()];
+        const nd = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
+        if (pinchDist) { adjustSetZoom((adj.im.tf.zoom || 1) * (nd / pinchDist)); $('adjust-zoom').value = adj.im.tf.zoom; }
+        pinchDist = nd;
+      } else {
+        pan(e.clientX - prev.clientX, e.clientY - prev.clientY);
+        pointers.set(e.pointerId, e);
+      }
+    });
+    const up = (e) => { pointers.delete(e.pointerId); if (pointers.size < 2) pinchDist = 0; };
+    c.addEventListener('pointerup', up);
+    c.addEventListener('pointercancel', up);
+    c.addEventListener('wheel', (e) => { if (!adj) return; e.preventDefault(); adjustZoom(e.deltaY < 0 ? 0.12 : -0.12); }, { passive: false });
+  }
+  bind();
+})();
 
 // ---------- init ----------
 (function init() {
