@@ -251,7 +251,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">1 imagem → 300×300 · 2 → 600×300 (1×2) · 3–4 → 600×600 (2×2)</div>
+        <div class="hint" id="panel-hint">1 → 300×300 · 2 → 600×300 (1×2) · 3–4 → 600×600 (2×2) · ao chegar em 4 gera sozinho (sem baixar)</div>
       </div>
     </div>
 
@@ -345,6 +345,8 @@ async function addFiles(fileList) {
   renderEditor();
   if (added) toast('green', `✓ ${added} imagem(ns) adicionada(s)`, `Fila: ${images.length}/4`);
   if (skipped) toast('yellow', `${skipped} ignorada(s)`, 'A fila comporta no máximo 4 imagens');
+  // Ao completar 4, gera o painel automaticamente (sem disparar download).
+  if (images.length === 4) generatePanel();
 }
 
 // ---------- editor ----------
@@ -505,8 +507,7 @@ function emitPanel(canvas, kind) {
     const url = URL.createObjectURL(blob);
     panels.unshift({ id: nextId++, name, number, url, at: new Date() });
     renderPanels();
-    triggerDownload(url, `${name}_${suffix}_${number}.png`);
-    toast('green', '✓ Imagem gerada', `${name} · #${number} — baixada`);
+    toast('green', '✓ Imagem gerada', `${name} · #${number} — veja na galeria abaixo`);
   }, 'image/png');
 }
 
