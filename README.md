@@ -41,6 +41,24 @@ O dashboard fica em `http://localhost:7842`. Na primeira execução são criados
 `config.json` (pastas monitoradas, output, intervalo de polling), `state.json`
 (filas e histórico) e a pasta de output.
 
+## Versão web (sem instalar nada)
+
+Para o fluxo **só arrastar/importar → montar o 2×2 → exportar** (sem
+monitoramento de pastas e sem armazenar imagens), existe uma versão 100%
+client-side em [`web/index.html`](web/index.html):
+
+- Roda inteiramente **no navegador** — a composição 2×2 usa a **Canvas API**
+  (mesma regra do app nativo: 600×600, tiles de 300×300, fundo preto, cada
+  imagem encaixada sem distorção e centralizada).
+- **Privacidade:** as imagens **nunca saem do dispositivo** — não há servidor,
+  banco de dados nem upload. Nada é persistido (fecha a aba, some tudo).
+- Funciona em **macOS, Windows, Linux e celular**, sem Python e sem `pip`.
+
+Uso: abra `web/index.html` com duplo-clique, ou publique no **GitHub Pages**.
+O workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml) publica
+a pasta `web/` automaticamente — basta habilitar uma vez em
+**Settings → Pages → Source = "GitHub Actions"**.
+
 ## Arquitetura
 
 ```
