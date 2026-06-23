@@ -154,9 +154,8 @@
   .tile .plus { color: var(--text-dim); font-size: 26px; }
   .tile .remove {
     position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,.7);
-    border: none; border-radius: 4px; color: var(--text); padding: 1px 7px; font-size: 13px; display: none; z-index: 3;
+    border: none; border-radius: 4px; color: var(--text); padding: 1px 7px; font-size: 13px; display: block; z-index: 3;
   }
-  .tile.filled:hover .remove { display: block; }
   .layout-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .editor-actions { display: flex; gap: 8px; }
   .hint { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 10px; }
@@ -202,11 +201,11 @@
   /* ---------- Tile canvas + botão ajustar ---------- */
   .tilecanvas { width: 100%; height: 100%; display: block; object-fit: contain; }
   .tile .adjust-btn {
-    position: absolute; bottom: 4px; right: 4px; z-index: 3;
-    background: rgba(0,0,0,.7); border: none; border-radius: 4px;
-    color: var(--accent); padding: 1px 7px; font-size: 13px; line-height: 1.4; display: none;
+    position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); z-index: 3;
+    background: rgba(0,0,0,.72); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--accent); padding: 2px 10px; font-size: 11px; font-weight: 600; line-height: 1.4; display: block; white-space: nowrap;
   }
-  .tile.filled:hover .adjust-btn { display: block; }
+  .tile .adjust-btn:hover { border-color: var(--accent); }
 
   /* ---------- Adjust overlay ---------- */
   .adjust-overlay {
@@ -290,7 +289,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">1 → proporção original · 2 → 600×600 (1×2/2×1; Cortar/Encaixar) · 3–4 → 600×600 (2×2) · passe o mouse no tile e use ✥ para pan/zoom</div>
+        <div class="hint" id="panel-hint">1 → proporção original · 2 → 600×600 (1×2/2×1; Cortar/Encaixar) · 3–4 → 600×600 (2×2) · botão “Ajustar” no tile abre pan/zoom/girar</div>
       </div>
     </div>
 
@@ -373,7 +372,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.5.0';   // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.5.1';   // marcador de versão exibido no cabeçalho
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
@@ -435,7 +434,7 @@ function renderEditor() {
       thumb.onclick = () => { if (canAdjust) { const c = panelCell(); openAdjust(img, c.aspect, c.fit); } else showLightbox(img.el.src); };
       tile.appendChild(thumb); tile.appendChild(pos);
       if (canAdjust) {
-        const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = '✥';
+        const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = 'Ajustar';
         adjb.title = 'Ajustar enquadramento (pan/zoom)';
         adjb.onclick = (e) => { e.stopPropagation(); const c = panelCell(); openAdjust(img, c.aspect, c.fit); };
         tile.appendChild(adjb);
@@ -781,7 +780,7 @@ function renderCompareColumn(side) {
     rm.onclick = (e) => { e.stopPropagation(); cmp[side] = cmp[side].filter(x => x.id !== img.id); renderCompare(); };
     const thumb = tileThumb(img);
     thumb.onclick = () => { const c = compareCell(); openAdjust(img, c.aspect, c.fit); };
-    const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = '✥';
+    const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = 'Ajustar';
     adjb.title = 'Ajustar enquadramento (pan/zoom)';
     adjb.onclick = (e) => { e.stopPropagation(); const c = compareCell(); openAdjust(img, c.aspect, c.fit); };
     tile.appendChild(thumb); tile.appendChild(adjb); tile.appendChild(rm);
