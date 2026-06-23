@@ -505,7 +505,8 @@ function emitPanel(canvas, kind) {
   canvas.toBlob((blob) => {
     if (!blob) { toast('red', 'Falha ao gerar', 'Não foi possível compor o PNG'); return; }
     const url = URL.createObjectURL(blob);
-    panels.unshift({ id: nextId++, name, number, url, at: new Date() });
+    const file = `${name}_${suffix}_${number}.png`;
+    panels.unshift({ id: nextId++, name, number, url, file, at: new Date() });
     renderPanels();
     toast('green', '✓ Imagem gerada', `${name} · #${number} — veja na galeria abaixo`);
   }, 'image/png');
@@ -527,7 +528,7 @@ function renderPanels() {
     const card = document.createElement('div');
     card.className = 'panel-card';
     card.innerHTML = `
-      <div class="thumb"><img src="${p.url}" alt=""></div>
+      <div class="thumb"><img src="${p.url}" alt="" draggable="true" title="Arraste para a área de trabalho para salvar"></div>
       <div class="meta">
         <div class="pname">${escapeHtml(p.name.replace(/_/g, ' '))}</div>
         <div class="pdate">#${p.number} · ${p.at.toLocaleTimeString('pt-BR', { hour12: false })}</div>
@@ -537,8 +538,16 @@ function renderPanels() {
           <button class="danger" data-act="del">Remover</button>
         </div>
       </div>`;
+    const thumbImg = card.querySelector('.thumb img');
+    // Arrastar a imagem para fora (Finder/área de trabalho/outro app) exporta o PNG.
+    // O DownloadURL diz ao navegador qual arquivo criar ao soltar a URL blob:.
+    thumbImg.addEventListener('dragstart', (e) => {
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('DownloadURL', `image/png:${p.file}:${p.url}`);
+      e.dataTransfer.setData('text/uri-list', p.url);
+    });
     card.querySelector('.thumb').onclick = () => showLightbox(p.url);
-    card.querySelector('[data-act="dl"]').onclick = () => triggerDownload(p.url, `${p.name}_panel_${p.number}.png`);
+    card.querySelector('[data-act="dl"]').onclick = () => triggerDownload(p.url, p.file);
     card.querySelector('[data-act="edit"]').onclick = () => reopenPanel(p);
     card.querySelector('[data-act="del"]').onclick = () => removePanel(p.id);
     grid.appendChild(card);
