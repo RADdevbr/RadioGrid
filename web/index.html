@@ -249,11 +249,16 @@
           <span class="count-badge"><b id="editor-count">0</b>/4</span>
         </div>
         <div class="layout-row" id="layout-row" style="display:none">
-          <span class="mono" style="color:var(--text-dim);font-size:12px">Layout (2 imagens):</span>
+          <span class="mono" style="color:var(--text-dim);font-size:12px">Layout:</span>
           <div class="mode-switch" style="margin-bottom:0">
             <button id="lay-auto" class="active" onclick="setLayout('auto')">Auto</button>
             <button id="lay-row" onclick="setLayout('row')">1×2</button>
             <button id="lay-col" onclick="setLayout('col')">2×1</button>
+          </div>
+          <span class="mono" style="color:var(--text-dim);font-size:12px">Encaixe:</span>
+          <div class="mode-switch" style="margin-bottom:0">
+            <button id="fit-cover" class="active" onclick="setFit('cover')">Cortar</button>
+            <button id="fit-contain" onclick="setFit('contain')">Encaixar</button>
           </div>
         </div>
         <div class="tiles" id="tiles"></div>
@@ -261,7 +266,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">1 → proporção original · 2 → 600×600 (1×2 ou 2×1, preenche o quadrado) · 3–4 → 600×600 (2×2) · ao chegar em 4 gera sozinho</div>
+        <div class="hint" id="panel-hint">1 → proporção original · 2 → 600×600 (1×2/2×1; Cortar preenche, Encaixar mantém tudo) · 3–4 → 600×600 (2×2)</div>
       </div>
     </div>
 
@@ -319,11 +324,12 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.2.0';   // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.3.0';   // marcador de versão exibido no cabeçalho
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
 let panelLayout = 'auto';           // 'auto' | 'row' (1×2) | 'col' (2×1) — usado com 2 imagens
+let fitMode = 'cover';              // 'cover' (cortar) | 'contain' (sem cortar) — 2 imagens
 let images = [];                    // painel: até 4 { id, name, el }
 let cmp = { left: [], right: [] };  // comparativo: até 2 por lado { id, name, el }
 let panels = [];                    // gerados na sessão: { id, name, number, url(blob), at }
@@ -476,7 +482,7 @@ function drawCover(ctx, el, x, y, w, h) {
 // 2 imagens → quadrado 600×600 completo, cada uma ocupando metade:
 //   'row' (1×2) → duas células 300×600 lado a lado.
 //   'col' (2×1) → duas células 600×300 empilhadas.
-function composeStrip(imgs, orientation) {
+function composeStrip(imgs, orientation, fit) {
   const canvas = document.createElement('canvas');
   canvas.width = CANVAS; canvas.height = CANVAS;     // 600×600 fixo
   const ctx = canvas.getContext('2d');
@@ -486,7 +492,8 @@ function composeStrip(imgs, orientation) {
   const cells = orientation === 'row'
     ? [[0, 0, half, CANVAS], [half, 0, half, CANVAS]]   // 300×600 cada
     : [[0, 0, CANVAS, half], [0, half, CANVAS, half]];  // 600×300 cada
-  imgs.slice(0, 2).forEach((im, i) => drawCover(ctx, im.el, ...cells[i]));
+  const draw = fit === 'contain' ? drawContain : drawCover; // cortar (cover) ou encaixar (contain)
+  imgs.slice(0, 2).forEach((im, i) => draw(ctx, im.el, ...cells[i]));
   return canvas;
 }
 
@@ -508,7 +515,7 @@ function resolveLayout(imgs) {
 function composeAdaptive(imgs) {
   const n = Math.min(imgs.length, 4);
   if (n === 1) return composeSingle(imgs[0]);
-  if (n === 2) return composeStrip(imgs, resolveLayout(imgs));
+  if (n === 2) return composeStrip(imgs, resolveLayout(imgs), fitMode);
   const canvas = document.createElement('canvas');
   canvas.width = 2 * TILE; canvas.height = 2 * TILE;
   const ctx = canvas.getContext('2d');
@@ -564,7 +571,7 @@ function safeName(raw) {
 function generatePanel() {
   if (!images.length) return;
   // Guarda as fontes (referências em memória) para o "Reabrir" reeditar.
-  const restore = { kind: 'panel', images: images.slice(), layout: panelLayout };
+  const restore = { kind: 'panel', images: images.slice(), layout: panelLayout, fit: fitMode };
   emitPanel(composeAdaptive(images), 'panel', restore);
   clearEditor();
 }
@@ -642,6 +649,7 @@ function reopenPanel(p) {
     setMode('panel');
     images = r.images.slice();
     setLayout(r.layout || 'auto');
+    setFit(r.fit || 'cover');
     renderEditor();
   }
   toast('green', '✏️ Reaberto para edição', 'Imagens-fonte restauradas — ajuste e gere de novo');
@@ -667,6 +675,10 @@ function setMode(m) {
 function setLayout(l) {
   panelLayout = l;
   ['auto', 'row', 'col'].forEach(k => $('lay-' + k).classList.toggle('active', k === l));
+}
+function setFit(f) {
+  fitMode = f;
+  ['cover', 'contain'].forEach(k => $('fit-' + k).classList.toggle('active', k === f));
 }
 function updateLoadedStat() {
   $('stat-loaded').textContent = mode === 'panel'
