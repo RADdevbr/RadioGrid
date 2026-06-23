@@ -125,8 +125,9 @@
   .cmp-date input[type=date] { width: 40px; background: var(--bg); border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 6px; cursor: pointer; color-scheme: dark; }
   .cmp-tiles { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 8px; }
   .cmp-tiles .tile { aspect-ratio: 2 / 1; }
-  .cmp-dz { min-height: 90px; padding: 12px; flex-direction: column; gap: 6px; text-align: center; }
-  .cmp-dz .cmp-add { padding: 6px 12px; font-size: 12px; }
+  .cmp-dz { min-height: 200px; padding: 16px; flex-direction: column; gap: 8px; text-align: center; }
+  .cmp-dz .cmp-add { padding: 7px 14px; font-size: 13px; }
+  #pane-compare .editor-card { max-width: none; }   /* ocupa a largura toda: cada coluna ~metade da tela */
 
   /* ---------- Editor 2x2 ---------- */
   .editor-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 16px; max-width: 520px; }
@@ -256,7 +257,7 @@
 
     <!-- Modo Comparativo -->
     <div class="mode-pane" id="pane-compare">
-      <div class="editor-card" style="max-width:560px">
+      <div class="editor-card">
         <div class="cmp-grid">
           <div class="cmp-col">
             <div class="cmp-label">Data anterior</div>
