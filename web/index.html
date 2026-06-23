@@ -154,9 +154,8 @@
   .tile .plus { color: var(--text-dim); font-size: 26px; }
   .tile .remove {
     position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,.7);
-    border: none; border-radius: 4px; color: var(--text); padding: 1px 7px; font-size: 13px; display: none; z-index: 3;
+    border: none; border-radius: 4px; color: var(--text); padding: 1px 7px; font-size: 13px; display: block; z-index: 3;
   }
-  .tile.filled:hover .remove { display: block; }
   .layout-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .editor-actions { display: flex; gap: 8px; }
   .hint { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 10px; }
@@ -202,11 +201,11 @@
   /* ---------- Tile canvas + botão ajustar ---------- */
   .tilecanvas { width: 100%; height: 100%; display: block; object-fit: contain; }
   .tile .adjust-btn {
-    position: absolute; bottom: 4px; right: 4px; z-index: 3;
-    background: rgba(0,0,0,.7); border: none; border-radius: 4px;
-    color: var(--accent); padding: 1px 7px; font-size: 13px; line-height: 1.4; display: none;
+    position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); z-index: 3;
+    background: rgba(0,0,0,.72); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--accent); padding: 2px 10px; font-size: 11px; font-weight: 600; line-height: 1.4; display: block; white-space: nowrap;
   }
-  .tile.filled:hover .adjust-btn { display: block; }
+  .tile .adjust-btn:hover { border-color: var(--accent); }
 
   /* ---------- Adjust overlay ---------- */
   .adjust-overlay {
@@ -290,7 +289,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">1 → proporção original · 2 → 600×600 (1×2/2×1; Cortar/Encaixar) · 3–4 → 600×600 (2×2) · passe o mouse no tile e use ✥ para pan/zoom</div>
+        <div class="hint" id="panel-hint">1 → proporção original (botão “Girar”) · 2 → 600×600 (1×2/2×1; Cortar/Encaixar) · 3–4 → 600×600 (2×2) · “Ajustar” no tile abre girar/pan/zoom</div>
       </div>
     </div>
 
@@ -350,7 +349,7 @@
   <div class="adjust-box" onclick="event.stopPropagation()">
     <div class="adjust-title">Ajustar enquadramento</div>
     <div class="adjust-stage"><canvas id="adjust-canvas"></canvas></div>
-    <div class="adjust-ctrls">
+    <div class="adjust-ctrls" id="zoom-ctrls">
       <span class="adjust-lbl">Zoom</span>
       <button onclick="adjustZoom(-0.12)">−</button>
       <input type="range" id="adjust-zoom" min="1" max="4" step="0.01" value="1" oninput="adjustSetZoom(this.value)">
@@ -373,7 +372,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.5.0';   // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.6.0';   // marcador de versão exibido no cabeçalho
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
@@ -431,16 +430,17 @@ function renderEditor() {
       const rm = document.createElement('button'); rm.className = 'remove'; rm.textContent = '×';
       rm.onclick = (e) => { e.stopPropagation(); removeImage(img.id); };
       const thumb = tileThumb(img);
-      const canAdjust = images.length >= 2; // 1 imagem sai na proporção original (sem célula)
-      thumb.onclick = () => { if (canAdjust) { const c = panelCell(); openAdjust(img, c.aspect, c.fit); } else showLightbox(img.el.src); };
-      tile.appendChild(thumb); tile.appendChild(pos);
-      if (canAdjust) {
-        const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = '✥';
-        adjb.title = 'Ajustar enquadramento (pan/zoom)';
-        adjb.onclick = (e) => { e.stopPropagation(); const c = panelCell(); openAdjust(img, c.aspect, c.fit); };
-        tile.appendChild(adjb);
-      }
-      tile.appendChild(rm);
+      // 1 imagem → só rotação (sai na proporção original); 2+ → célula com pan/zoom/girar.
+      const openIt = () => {
+        if (images.length >= 2) { const c = panelCell(); openAdjust(img, { aspect: c.aspect, fit: c.fit }); }
+        else openAdjust(img, { single: true });
+      };
+      thumb.onclick = openIt;
+      const adjb = document.createElement('button'); adjb.className = 'adjust-btn';
+      adjb.textContent = images.length >= 2 ? 'Ajustar' : 'Girar';
+      adjb.title = images.length >= 2 ? 'Ajustar enquadramento (girar/pan/zoom)' : 'Girar imagem';
+      adjb.onclick = (e) => { e.stopPropagation(); openIt(); };
+      tile.appendChild(thumb); tile.appendChild(pos); tile.appendChild(adjb); tile.appendChild(rm);
     } else {
       tile.className = 'tile';
       const plus = document.createElement('span'); plus.className = 'plus'; plus.textContent = '+';
@@ -529,15 +529,43 @@ function imgDim(im) {
   return { w: im.el.naturalWidth || im.el.width || 1, h: im.el.naturalHeight || im.el.height || 1 };
 }
 
-// 1 imagem: exporta na própria proporção, lado maior = STRIP_SIDE (sem preto).
+// Desenha a imagem (com rotação) preenchendo cw×ch, que já vem na proporção do
+// bounding box girado — usado na imagem única e no preview do overlay single.
+function drawSingleInto(ctx, im, cw, ch) {
+  const el = im.el;
+  const iw = el.naturalWidth || el.width, ih = el.naturalHeight || el.height;
+  if (!iw || !ih) return;
+  const rad = ((im.tf && im.tf.rot) || 0) * Math.PI / 180;
+  const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
+  const ew = iw * ac + ih * as, eh = iw * as + ih * ac;
+  const s = Math.min(cw / ew, ch / eh);
+  ctx.save();
+  ctx.translate(cw / 2, ch / 2); ctx.rotate(rad);
+  ctx.drawImage(el, -iw * s / 2, -ih * s / 2, iw * s, ih * s);
+  ctx.restore();
+}
+
+// Proporção (w/h) do bounding box já girado de uma imagem.
+function rotatedAspect(im) {
+  const { w, h } = imgDim(im);
+  const rad = ((im.tf && im.tf.rot) || 0) * Math.PI / 180;
+  const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
+  return (w * ac + h * as) / (w * as + h * ac);
+}
+
+// 1 imagem: exporta na própria proporção (já girada), lado maior = STRIP_SIDE.
 function composeSingle(im) {
   const { w, h } = imgDim(im);
-  const s = STRIP_SIDE / Math.max(w, h);
+  const rad = ((im.tf && im.tf.rot) || 0) * Math.PI / 180;
+  const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
+  const ew = w * ac + h * as, eh = w * as + h * ac;
+  const s = STRIP_SIDE / Math.max(ew, eh);
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(w * s));
-  canvas.height = Math.max(1, Math.round(h * s));
+  canvas.width = Math.max(1, Math.round(ew * s));
+  canvas.height = Math.max(1, Math.round(eh * s));
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(im.el, 0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawSingleInto(ctx, im, canvas.width, canvas.height);
   return canvas;
 }
 
@@ -780,10 +808,11 @@ function renderCompareColumn(side) {
     rm.className = 'remove'; rm.textContent = '×';
     rm.onclick = (e) => { e.stopPropagation(); cmp[side] = cmp[side].filter(x => x.id !== img.id); renderCompare(); };
     const thumb = tileThumb(img);
-    thumb.onclick = () => { const c = compareCell(); openAdjust(img, c.aspect, c.fit); };
-    const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = '✥';
-    adjb.title = 'Ajustar enquadramento (pan/zoom)';
-    adjb.onclick = (e) => { e.stopPropagation(); const c = compareCell(); openAdjust(img, c.aspect, c.fit); };
+    const openIt = () => { const c = compareCell(); openAdjust(img, { aspect: c.aspect, fit: c.fit }); };
+    thumb.onclick = openIt;
+    const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = 'Ajustar';
+    adjb.title = 'Ajustar enquadramento (girar/pan/zoom)';
+    adjb.onclick = (e) => { e.stopPropagation(); openIt(); };
     tile.appendChild(thumb); tile.appendChild(adjb); tile.appendChild(rm);
     tiles.appendChild(tile);
   });
@@ -876,23 +905,30 @@ function compareCell() {
   return { aspect: TILE / tileH, fit: 'contain' };
 }
 
-let adj = null; // { im, fit, draw() }
+let adj = null; // { im, fit, aspect, single }
 
-function openAdjust(im, aspect, fit) {
+// Abre o overlay. opts: { aspect, fit } para célula, ou { single:true } para
+// imagem única (só rotação — sai na própria proporção).
+function openAdjust(im, opts) {
+  adj = { im, fit: opts.fit || 'cover', aspect: opts.aspect, single: !!opts.single };
+  $('adjust-zoom').value = im.tf.zoom || 1;
+  $('adjust-rot').value = im.tf.rot || 0;
+  $('zoom-ctrls').style.display = adj.single ? 'none' : 'flex';
+  $('adjust-canvas').style.cursor = adj.single ? 'default' : 'grab';
+  adjRender();
+  $('adjust').style.display = 'flex';
+}
+function adjRender() {
+  if (!adj) return;
   const canvas = $('adjust-canvas');
   const LONG = 420;
+  const aspect = adj.single ? rotatedAspect(adj.im) : adj.aspect;
   canvas.width = aspect >= 1 ? LONG : Math.round(LONG * aspect);
   canvas.height = aspect >= 1 ? Math.round(LONG / aspect) : LONG;
-  const draw = () => {
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    drawCell(ctx, im, 0, 0, canvas.width, canvas.height, fit);
-  };
-  adj = { im, fit, draw };
-  $('adjust-zoom').value = im.tf.zoom;
-  $('adjust-rot').value = im.tf.rot || 0;
-  draw();
-  $('adjust').style.display = 'flex';
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (adj.single) drawSingleInto(ctx, adj.im, canvas.width, canvas.height);
+  else drawCell(ctx, adj.im, 0, 0, canvas.width, canvas.height, adj.fit);
 }
 function adjustClose() {
   $('adjust').style.display = 'none';
@@ -904,12 +940,12 @@ function adjustReset() {
   adj.im.tf = defaultTf();
   $('adjust-zoom').value = 1;
   $('adjust-rot').value = 0;
-  adj.draw();
+  adjRender();
 }
 function adjustSetRot(v) {
   if (!adj) return;
   adj.im.tf.rot = parseFloat(v) || 0;
-  adj.draw();
+  adjRender();
 }
 function adjustRotate(delta) {
   if (!adj) return;
@@ -917,15 +953,15 @@ function adjustRotate(delta) {
   r = ((r + 180) % 360 + 360) % 360 - 180;   // normaliza para (-180, 180]
   adj.im.tf.rot = r;
   $('adjust-rot').value = r;
-  adj.draw();
+  adjRender();
 }
 function adjustSetZoom(v) {
-  if (!adj) return;
+  if (!adj || adj.single) return;
   adj.im.tf.zoom = Math.max(1, Math.min(4, parseFloat(v) || 1));
-  adj.draw();
+  adjRender();
 }
 function adjustZoom(delta) {
-  if (!adj) return;
+  if (!adj || adj.single) return;
   adjustSetZoom((adj.im.tf.zoom || 1) + delta);
   $('adjust-zoom').value = adj.im.tf.zoom;
 }
@@ -940,7 +976,7 @@ function adjustZoom(delta) {
     return { dx: dxClient * (c.width / r.width), dy: dyClient * (c.height / r.height) };
   }
   function pan(dxClient, dyClient) {
-    if (!adj) return;
+    if (!adj || adj.single) return;
     const c = stage();
     const { dx, dy } = toInternalDelta(dxClient, dyClient);
     const d = imgDim(adj.im);
@@ -953,7 +989,7 @@ function adjustZoom(delta) {
     const dw = ew * base * adj.im.tf.zoom, dh = eh * base * adj.im.tf.zoom;
     adj.im.tf.cx = Math.max(0, Math.min(1, adj.im.tf.cx - dx / dw));
     adj.im.tf.cy = Math.max(0, Math.min(1, adj.im.tf.cy - dy / dh));
-    adj.draw();
+    adjRender();
   }
   function bind() {
     const c = stage();
