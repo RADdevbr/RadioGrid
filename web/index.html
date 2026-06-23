@@ -77,6 +77,7 @@
   .logo { font-weight: 700; font-size: 20px; letter-spacing: -.5px; }
   .logo .grid-dot { color: var(--accent); }
   .logo .web { font-family: var(--mono); font-size: 11px; color: var(--text-dim); font-weight: 500; margin-left: 6px; }
+  .logo .ver { font-family: var(--mono); font-size: 10px; color: var(--accent); font-weight: 600; margin-left: 8px; border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; vertical-align: middle; }
   .status-pill {
     display: inline-flex; align-items: center; gap: 7px;
     font-size: 13px; color: var(--text-dim);
@@ -200,7 +201,7 @@
 </head>
 <body>
 <header>
-  <div class="logo">Radio<span class="grid-dot">Grid</span><span class="web">web</span></div>
+  <div class="logo">Radio<span class="grid-dot">Grid</span><span class="web">web</span><span class="ver" id="app-version"></span></div>
   <div class="status-pill"><span class="dot"></span><span>100% no navegador</span></div>
   <div class="stats">
     <div class="stat">🖼 <b id="stat-loaded">0</b>/4 na fila</div>
@@ -309,6 +310,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
+const APP_VERSION = 'v1.0.0';   // marcador de versão exibido no cabeçalho
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
@@ -689,6 +691,8 @@ function dismiss(t) { if (!t.parentNode) return; t.classList.add('out'); setTime
 
 // ---------- init ----------
 (function init() {
+  $('app-version').textContent = APP_VERSION;
+  document.title = `RadioGrid Web ${APP_VERSION}`;
   renderEditor();
   renderCompare();
   renderPanels();
