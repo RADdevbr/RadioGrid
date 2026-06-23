@@ -105,7 +105,7 @@
   .config-row { margin-bottom: 16px; }
   .config-row:last-child { margin-bottom: 0; }
   .config-row label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
-  .dropzone { border: 1.5px dashed var(--border); border-radius: 8px; padding: 18px; min-height: 300px; color: var(--text-dim); font-size: 13px; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; transition: border-color .15s, background .15s; }
+  .dropzone { border: 1.5px dashed var(--border); border-radius: 8px; padding: 18px; min-height: 250px; color: var(--text-dim); font-size: 13px; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; transition: border-color .15s, background .15s; }
   .dropzone.drag { border-color: var(--accent); background: rgba(44,200,237,.08); color: var(--text); }
 
   /* ---------- Mode switch ---------- */
@@ -125,7 +125,8 @@
   .cmp-date input[type=date] { width: 40px; background: var(--bg); border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 6px; cursor: pointer; color-scheme: dark; }
   .cmp-tiles { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 8px; }
   .cmp-tiles .tile { aspect-ratio: 2 / 1; }
-  .cmp-add { width: 100%; padding: 8px; font-size: 12px; }
+  .cmp-dz { min-height: 90px; padding: 12px; flex-direction: column; gap: 6px; text-align: center; }
+  .cmp-dz .cmp-add { padding: 6px 12px; font-size: 12px; }
 
   /* ---------- Editor 2x2 ---------- */
   .editor-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 16px; max-width: 520px; }
@@ -264,7 +265,10 @@
               <input type="date" title="Escolher data" onchange="setDateFromPicker('cmp-left-date', this.value)">
             </div>
             <div class="cmp-tiles" id="cmp-left-tiles"></div>
-            <button class="cmp-add" onclick="document.getElementById('cmp-left-input').click()">+ Adicionar (máx. 2)</button>
+            <div class="dropzone cmp-dz" id="cmp-left-dz">
+              <span>Arraste aqui, ou</span>
+              <button class="cmp-add" onclick="document.getElementById('cmp-left-input').click()">Escolher (máx. 2)</button>
+            </div>
             <input type="file" id="cmp-left-input" accept="image/*" multiple style="display:none" onchange="addCompareFiles('left', this.files); this.value='';">
           </div>
           <div class="cmp-col">
@@ -274,7 +278,10 @@
               <input type="date" title="Escolher data" onchange="setDateFromPicker('cmp-right-date', this.value)">
             </div>
             <div class="cmp-tiles" id="cmp-right-tiles"></div>
-            <button class="cmp-add" onclick="document.getElementById('cmp-right-input').click()">+ Adicionar (máx. 2)</button>
+            <div class="dropzone cmp-dz" id="cmp-right-dz">
+              <span>Arraste aqui, ou</span>
+              <button class="cmp-add" onclick="document.getElementById('cmp-right-input').click()">Escolher (máx. 2)</button>
+            </div>
             <input type="file" id="cmp-right-input" accept="image/*" multiple style="display:none" onchange="addCompareFiles('right', this.files); this.value='';">
           </div>
         </div>
@@ -629,15 +636,20 @@ function generateCompare() {
 }
 
 // ---------- dropzone ----------
-function setupDropzone() {
-  const dz = $('dropzone');
+function bindDropzone(dz, handler) {
+  if (!dz) return;
   ['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
   ['dragleave', 'dragend'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
   dz.addEventListener('drop', e => {
-    e.preventDefault(); dz.classList.remove('drag');
+    e.preventDefault(); e.stopPropagation(); dz.classList.remove('drag');
     const files = (e.dataTransfer && e.dataTransfer.files) || [];
-    if (files.length) addFiles(files);
+    if (files.length) handler(files);
   });
+}
+function setupDropzone() {
+  bindDropzone($('dropzone'), addFiles);
+  bindDropzone($('cmp-left-dz'), files => addCompareFiles('left', files));
+  bindDropzone($('cmp-right-dz'), files => addCompareFiles('right', files));
   // Permite soltar imagens em qualquer lugar da página (apenas no modo Painel).
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => {
