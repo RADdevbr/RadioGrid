@@ -114,6 +114,8 @@
   .mode-switch button { border: none; border-radius: 0; background: var(--bg-elev); color: var(--text-dim); padding: 8px 18px; font-size: 13px; }
   .mode-switch button.active { background: var(--accent); color: #04222b; font-weight: 600; }
   .mode-switch button:not(.active):hover { color: var(--accent); }
+  /* variante compacta — botões de formato, menores que Painel/Comparativo */
+  .mode-switch.sm button { padding: 5px 11px; font-size: 11px; }
   .mode-pane { display: none; }
   .mode-pane.active { display: block; }
 
@@ -257,9 +259,10 @@
     <!-- Formato/tamanho da imagem exportada (vale p/ Painel e Comparativo) -->
     <div class="layout-row" id="format-row" style="margin-bottom:14px">
       <span class="mono" style="color:var(--text-dim);font-size:12px">Formato exportado:</span>
-      <div class="mode-switch" style="margin-bottom:0">
-        <button id="fmt-webris" class="active" onclick="setExportFormat('webris')" title="Deitado 1280×840 → renderiza 640×420 no laudo. A imagem e o bloco de assinatura cabem na MESMA página.">WebRIS 640×420</button>
-        <button id="fmt-square" onclick="setExportFormat('square')" title="Quadrado clássico 600×600. Mais alto: pode empurrar a assinatura p/ outra página. Use quando há pouco texto acima ou fora do WebRIS.">Quadrado 600×600</button>
+      <div class="mode-switch sm" style="margin-bottom:0">
+        <button id="fmt-webris" class="active" onclick="setExportFormat('webris')" title="640×500 em largura nativa: o WebRIS não reescala (sem distorção, não estoura a impressão) e a assinatura fica na mesma página. Recomendado.">WebRIS 640×500</button>
+        <button id="fmt-sharp2x" onclick="setExportFormat('sharp2x')" title="Deitado 1280×840 (2×, mais nítido). O WebRIS reduz p/ a largura da coluna; em instâncias que reduzem p/ 640 vira 640×420. Use se o seu WebRIS reduz p/ 640.">Nítido 1280×840</button>
+        <button id="fmt-square" onclick="setExportFormat('square')" title="Quadrado clássico 600×600. Mais alto: pode empurrar a assinatura p/ outra página. Use fora do WebRIS.">Quadrado 600×600</button>
       </div>
     </div>
 
@@ -381,7 +384,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.9.0';   // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.10.0';  // marcador de versão exibido no cabeçalho
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
@@ -413,17 +416,22 @@ const WEBRIS_MAX_H = 420;                       // teto seguro de altura renderi
 const EXPORT_SCALE = 2;                         // export 2× p/ nitidez (WebRIS reduz p/ 640)
 const WEBRIS_CANVAS_W = WEBRIS_W * EXPORT_SCALE; // 1280 — largura do canvas WebRIS
 
-// Dois formatos de exportação, selecionáveis pelo usuário (botão no topo):
-//   'webris' → deitado 1280×840 (renderiza 640×420 no laudo): imagem + assinatura
-//              cabem na MESMA página. Passa por fitForWebRIS (clamp de altura).
-//   'square' → quadrado clássico 600×600 (renderiza 600×600): mais alto, NÃO
-//              garante a assinatura na mesma página — útil quando há pouco texto
-//              acima da imagem, ou quando o destino não é o WebRIS.
+// Três formatos de exportação, selecionáveis pelo usuário (botões no topo):
+//   'webris'  → 640×500 NATIVO (1×). O WebRIS não reescala (já está na largura
+//               da coluna): sem distorção, sem estourar a área de impressão, e a
+//               altura (≤500) deixa a assinatura na mesma página. PADRÃO.
+//   'sharp2x' → deitado 1280×840 (2×, nítido). O WebRIS reduz p/ a largura da
+//               coluna; em instâncias que reduzem p/ 640 vira 640×420. Use se o
+//               seu WebRIS reduz p/ 640 (em alguns ele exibe ~800 e distorce).
+//               Passa por fitForWebRIS (clamp de altura).
+//   'square'  → quadrado clássico 600×600 (renderiza 600×600): mais alto, NÃO
+//               garante a assinatura na mesma página — útil fora do WebRIS.
 const EXPORT_FORMATS = {
-  webris: { w: WEBRIS_CANVAS_W, h: WEBRIS_MAX_H * EXPORT_SCALE, scale: EXPORT_SCALE, clamp: true,  short: 'WebRIS 640×420' },
-  square: { w: 600,             h: 600,                          scale: 1,            clamp: false, short: 'Quadrado 600×600' },
+  webris:  { w: 640,             h: 500,                          scale: 1,            clamp: false, short: 'WebRIS 640×500' },
+  sharp2x: { w: WEBRIS_CANVAS_W, h: WEBRIS_MAX_H * EXPORT_SCALE,  scale: EXPORT_SCALE, clamp: true,  short: 'Nítido 1280×840' },
+  square:  { w: 600,             h: 600,                          scale: 1,            clamp: false, short: 'Quadrado 600×600' },
 };
-let exportFormat = 'webris';                    // padrão: formato seguro p/ o laudo
+let exportFormat = 'webris';                    // padrão: 640×500 nativo (sem reescala no laudo)
 let PANEL_W = EXPORT_FORMATS[exportFormat].w;   // largura do canvas do formato atual
 let PANEL_H = EXPORT_FORMATS[exportFormat].h;   // altura do canvas do formato atual
 
@@ -592,14 +600,16 @@ function rotatedAspect(im) {
   return (w * ac + h * as) / (w * as + h * ac);
 }
 
-// 1 imagem: exporta na própria proporção (já girada). Renderiza no maior lado
-// possível (PANEL_W, 2×); fitForWebRIS() depois reduz p/ caber em 640×420.
+// 1 imagem: exporta na própria proporção (já girada), cabendo na caixa do
+// formato ativo (PANEL_W × PANEL_H). Assim mesmo uma imagem em pé não estoura a
+// altura do formato (ex.: ≤500 no WebRIS 640×500). No 'sharp2x', fitForWebRIS()
+// ainda reduz p/ o teto renderizado.
 function composeSingle(im) {
   const { w, h } = imgDim(im);
   const rad = ((im.tf && im.tf.rot) || 0) * Math.PI / 180;
   const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
   const ew = w * ac + h * as, eh = w * as + h * ac;
-  const s = PANEL_W / Math.max(ew, eh);
+  const s = Math.min(PANEL_W / ew, PANEL_H / eh);
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(ew * s));
   canvas.height = Math.max(1, Math.round(eh * s));
@@ -609,12 +619,12 @@ function composeSingle(im) {
   return canvas;
 }
 
-// 2 imagens → painel deitado ~3:2 completo (1280×840), cada uma ocupando metade:
-//   'row' (1×2) → duas células 640×840 lado a lado.
-//   'col' (2×1) → duas células 1280×420 empilhadas.
+// 2 imagens → preenche o canvas do formato ativo, cada uma ocupando metade:
+//   'row' (1×2) → duas células lado a lado (cada uma PANEL_W/2 × PANEL_H).
+//   'col' (2×1) → duas células empilhadas (cada uma PANEL_W × PANEL_H/2).
 function composeStrip(imgs, orientation, fit) {
   const canvas = document.createElement('canvas');
-  canvas.width = PANEL_W; canvas.height = PANEL_H;   // 1280×840 (~3:2) → renderiza 640×420
+  canvas.width = PANEL_W; canvas.height = PANEL_H;   // dimensões do formato ativo
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, PANEL_W, PANEL_H);
@@ -677,13 +687,13 @@ function fitForWebRIS(src) {
   return out;
 }
 
-// Saída adaptável ao nº de imagens (sempre WebRIS-safe via fitForWebRIS no emit):
-//   1 → própria proporção · 2 → 1×2 ou 2×1 · 3–4 → deitado ~3:2 (2×2, 1280×840).
+// Saída adaptável ao nº de imagens, no formato ativo (clamp aplicado no emit):
+//   1 → própria proporção · 2 → 1×2 ou 2×1 · 3–4 → grade 2×2.
 function composeAdaptive(imgs) {
   const n = Math.min(imgs.length, 4);
   if (n === 1) return composeSingle(imgs[0]);
   if (n === 2) return composeStrip(imgs, resolveLayout(imgs), fitMode);
-  const cw = PANEL_W / 2, ch = PANEL_H / 2;   // células 640×420
+  const cw = PANEL_W / 2, ch = PANEL_H / 2;   // células do formato ativo
   const canvas = document.createElement('canvas');
   canvas.width = PANEL_W; canvas.height = PANEL_H;
   const ctx = canvas.getContext('2d');
@@ -752,8 +762,8 @@ function emitPanel(canvas, kind, restore) {
   panelCounter++;
   const number = panelCounter;
   const suffix = kind === 'compare' ? 'comparativo' : 'panel';
-  // No formato WebRIS, garantia final: a imagem renderiza com altura ≤ 420px
-  // (cabe a assinatura na mesma página). No formato quadrado, emite como está.
+  // Só o 'sharp2x' (1280×840) passa pelo clamp p/ ≤420px renderidos. Os formatos
+  // nativos (webris 640×500 e quadrado 600×600) já saem no tamanho final.
   const out = EXPORT_FORMATS[exportFormat].clamp ? fitForWebRIS(canvas) : canvas;
   out.toBlob((blob) => {
     if (!blob) { toast('red', 'Falha ao gerar', 'Não foi possível compor o PNG'); return; }
@@ -853,7 +863,7 @@ function setFit(f) {
   fitMode = f;
   ['cover', 'contain'].forEach(k => $('fit-' + k).classList.toggle('active', k === f));
 }
-// Alterna o formato de exportação (webris deitado 640×420 ↔ quadrado 600×600).
+// Alterna o formato de exportação (WebRIS 640×500 nativo · Nítido 1280×840 · Quadrado 600×600).
 function setExportFormat(key) {
   if (!EXPORT_FORMATS[key]) return;
   exportFormat = key;
