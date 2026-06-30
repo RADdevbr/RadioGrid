@@ -215,5 +215,54 @@ class TestImport(unittest.TestCase):
         self.assertTrue(res["errors"])
 
 
+class TestWebRISPanelGeometry(unittest.TestCase):
+    """O painel composto deve ser WebRIS-safe: canvas deitado 1280×1120 (8:7),
+    que renderiza 640×560 no laudo (cabe o bloco de assinatura na mesma página).
+    """
+
+    def setUp(self):
+        try:
+            from PIL import Image  # noqa: F401
+        except ImportError:
+            self.skipTest("Pillow não instalado — composição real indisponível")
+        import macos_bridge
+        self.macos_bridge = macos_bridge
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(getattr(self, "tmp", ""), ignore_errors=True)
+
+    def _make_img(self, name, size, color):
+        from PIL import Image
+        path = os.path.join(self.tmp, name)
+        Image.new("RGB", size, color).save(path, "PNG")
+        return path
+
+    def _compose(self, sources):
+        out = os.path.join(self.tmp, "panel.png")
+        ok = self.macos_bridge.compose_panel(sources, out)
+        self.assertTrue(ok)
+        from PIL import Image
+        with Image.open(out) as im:
+            return im.size  # (w, h)
+
+    def _assert_webris_safe(self, size):
+        w, h = size
+        # Largura natural até 640; acima disso o WebRIS reduz p/ 640.
+        rendered_h = h if w <= 640 else h * 640 / w
+        self.assertLessEqual(rendered_h, 560 + 0.5,
+                             f"altura renderizada {rendered_h:.0f}px > 560px")
+
+    def test_four_images_panel_is_1280x1120(self):
+        srcs = [self._make_img(f"i{i}.png", (400, 400), (i * 40, 0, 0)) for i in range(4)]
+        self.assertEqual(self._compose(srcs), (1280, 1120))
+
+    def test_panel_is_webris_safe_for_1_to_4(self):
+        srcs = [self._make_img(f"j{i}.png", (300 + i * 50, 500), (0, i * 40, 0)) for i in range(4)]
+        for n in range(1, 5):
+            with self.subTest(n=n):
+                self._assert_webris_safe(self._compose(srcs[:n]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
