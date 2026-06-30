@@ -155,17 +155,18 @@ import Foundation
 let args = CommandLine.arguments
 let paths = Array(args[1..<(args.count - 1)])
 let outputPath = args.last!
-// Tiles deitados 640×560 → canvas 1280×1120 (8:7). Formato WebRIS-safe: o laudo
-// reduz p/ 640px de largura, renderizando 640×560 (cabe a assinatura na página).
-let tileW: CGFloat = 640, tileH: CGFloat = 560
+// Tiles deitados 640×420 → canvas 1280×840 (~3:2). Formato WebRIS-safe: o laudo
+// reduz p/ ~640px de largura, renderizando ~640×420 — imagem e assinatura cabem
+// juntas na mesma página (8:7/560px era alto demais e empurrava a assinatura).
+let tileW: CGFloat = 640, tileH: CGFloat = 420
 
-let canvas = NSImage(size: NSSize(width: 1280, height: 1120))
+let canvas = NSImage(size: NSSize(width: 1280, height: 840))
 canvas.lockFocus()
 NSColor.black.setFill()
-NSRect(x: 0, y: 0, width: 1280, height: 1120).fill()
+NSRect(x: 0, y: 0, width: 1280, height: 840).fill()
 
-// Origem AppKit é o canto inferior-esquerdo → linha de cima em y = 560.
-let positions: [(CGFloat, CGFloat)] = [(0, 560), (640, 560), (0, 0), (640, 0)]
+// Origem AppKit é o canto inferior-esquerdo → linha de cima em y = 420.
+let positions: [(CGFloat, CGFloat)] = [(0, 420), (640, 420), (0, 0), (640, 0)]
 for (i, path) in paths.prefix(4).enumerated() {
     guard let img = NSImage(contentsOfFile: path) else { continue }
     let (x, y) = positions[i]
@@ -242,28 +243,29 @@ def _compose_stub(image_paths, output_path: str) -> bool:
 
 
 def _compose_pillow(image_paths, output_path: str) -> bool:
-    """Composição 2×2 deitada 1280×1120 (8:7) com Pillow — multiplataforma.
+    """Composição 2×2 deitada 1280×840 (~3:2) com Pillow — multiplataforma.
 
     Formato WebRIS-safe: colado no editor do laudo, o WebRIS reduz a imagem
-    para 640px de largura, renderizando 640×560 — abaixo do teto que empurraria
-    o bloco de assinatura para uma página nova. Cada imagem é redimensionada
-    para caber num tile de 640×560 (sem distorção) e centralizada sobre preto.
+    para a largura da coluna (~640px), renderizando ~640×420 — baixo o bastante
+    para a imagem E o bloco de assinatura (~140px) caberem JUNTOS na mesma
+    página (8:7/560px era alto demais e empurrava a assinatura). Cada imagem é
+    redimensionada para caber num tile de 640×420 (sem distorção), centralizada.
     """
     from PIL import Image
 
-    canvas = Image.new("RGB", (1280, 1120), (0, 0, 0))
-    # Origem no canto superior-esquerdo (ordem de leitura 2×2); tiles 640×560.
-    positions = [(0, 0), (640, 0), (0, 560), (640, 560)]
+    canvas = Image.new("RGB", (1280, 840), (0, 0, 0))
+    # Origem no canto superior-esquerdo (ordem de leitura 2×2); tiles 640×420.
+    positions = [(0, 0), (640, 0), (0, 420), (640, 420)]
     for i, path in enumerate(list(image_paths)[:4]):
         try:
             img = Image.open(path)
             img = img.convert("RGB")
         except Exception:
             continue
-        img.thumbnail((640, 560))  # fit dentro do tile, mantém proporção
+        img.thumbnail((640, 420))  # fit dentro do tile, mantém proporção
         x, y = positions[i]
         ox = x + (640 - img.width) // 2
-        oy = y + (560 - img.height) // 2
+        oy = y + (420 - img.height) // 2
         canvas.paste(img, (ox, oy))
     try:
         canvas.save(output_path, "PNG")
@@ -273,11 +275,12 @@ def _compose_pillow(image_paths, output_path: str) -> bool:
 
 
 def compose_panel(image_paths, output_path: str) -> bool:
-    """Gera um painel deitado 1280×1120 (8:7) a partir de 1–4 imagens.
+    """Gera um painel deitado 1280×840 (~3:2) a partir de 1–4 imagens.
 
     Contrato: fundo preto, cada imagem fit-dentro-do-tile sem distorção,
     grava PNG em output_path. Retorna True em sucesso, False em falha.
-    Formato WebRIS-safe (renderiza 640×560 no laudo, cabe a assinatura).
+    Formato WebRIS-safe (renderiza ~640×420 no laudo: imagem + assinatura
+    cabem juntas na mesma página).
 
     Prioriza Pillow (multiplataforma, não depende de swiftc); se indisponível,
     tenta a composição nativa via Swift no macOS; por fim, o stub.

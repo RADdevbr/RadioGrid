@@ -5,7 +5,7 @@ exportadas do Horos/OsiriX ou capturadas via screenshot no macOS.
 
 O RadioGrid monitora pastas em background (ou recebe imagens por importação
 manual), agrupa as imagens em uma fila e — a cada grupo de 4 — gera
-automaticamente um painel composto 2×2 deitado (1280×1120 px, formato
+automaticamente um painel composto 2×2 deitado (1280×840 px, formato
 WebRIS-safe, sem distorção). Um dashboard
 web local exibe o status em tempo real e permite configurar as pastas
 monitoradas. O nome do paciente é opcional (fila padrão `SEM NOME` quando vazio).
@@ -49,7 +49,7 @@ monitoramento de pastas e sem armazenar imagens), existe uma versão 100%
 client-side em [`web/index.html`](web/index.html):
 
 - Roda inteiramente **no navegador** — a composição 2×2 usa a **Canvas API**
-  (mesma regra do app nativo: canvas deitado 1280×1120, tiles de 640×560, fundo
+  (mesma regra do app nativo: canvas deitado 1280×840, tiles de 640×420, fundo
   preto, cada imagem encaixada sem distorção e centralizada).
 - **Privacidade:** as imagens **nunca saem do dispositivo** — não há servidor,
   banco de dados nem upload. Nada é persistido (fecha a aba, some tudo).
@@ -62,20 +62,37 @@ a pasta `web/` automaticamente — basta habilitar uma vez em
 
 ## Formato WebRIS-safe
 
-Os painéis são gerados num **canvas deitado 8:7 a 2× (1280×1120 px)** pensado
-para ser **colado no editor de laudos do WebRIS** (Rede D'Or). O WebRIS exibe a
-imagem na largura natural até **640 px** e, acima disso, a reduz para 640 px
-mantendo a proporção — então um 1280×1120 renderiza como **640×560**.
+Os painéis são gerados num **canvas deitado ~3:2 a 2× (1280×840 px)** pensado
+para ser **colado no editor de laudos do WebRIS** (Rede D'Or). O WebRIS reduz a
+imagem para a largura da coluna do laudo (~640 px no PDF) mantendo a proporção —
+então um 1280×840 renderiza como **~640×420**.
 
-Isso importa porque o WebRIS anexa um bloco de assinatura (~135 px) **fora** do
-editor; se a imagem renderizada passar de ~560 px de altura, ela empurra a
-assinatura para uma página nova (sobra uma página só com a assinatura). O
-formato deitado mantém a altura renderizada em **560 px** — o teto seguro — e
-ainda preenche toda a largura útil da coluna, saindo nítido (export 2×).
+Isso importa porque o WebRIS anexa um bloco de assinatura (~140 px) **fora** do
+editor, e a imagem é um bloco indivisível: ela e a assinatura precisam caber
+**juntas na mesma página**, senão a assinatura é empurrada sozinha para uma
+página nova. Medindo o PDF real do laudo, o corpo útil vai de y≈301 px (1ª linha
+de conteúdo, após o cabeçalho) a y≈900 px; descontando a assinatura sobra
+**~460 px** de altura para a imagem. Um painel 8:7 renderizava 640×**560** —
+alto demais. O formato ~3:2 mantém a altura renderizada em **~420 px** (com
+folga sob o teto, robusto inclusive se a coluna for de 686 px → ~450 px) e ainda
+preenche toda a largura, saindo nítido (export 2×).
 
 Toda imagem emitida passa por uma checagem final (`fitForWebRIS`, na versão web)
-que garante altura renderizada ≤ 560 px mesmo para imagem única em proporção
-livre (nesse caso reduz a altura preservando a proporção original).
+que garante altura renderizada ≤ 420 px mesmo para imagem única em proporção
+livre (nesse caso reduz a altura preservando a proporção original). A constante
+`WEBRIS_MAX_H` é o único botão de ajuste: subi-la dá imagens maiores ao custo de
+mais risco de empurrar a assinatura.
+
+### Toggle de formato (versão web)
+
+No topo do dashboard web há um seletor **"Formato exportado"** com duas opções,
+válido tanto para o Painel quanto para o Comparativo:
+
+- **WebRIS 640×420** (padrão) — canvas deitado 1280×840; a imagem e a assinatura
+  cabem na mesma página do laudo. Passa pela checagem `fitForWebRIS`.
+- **Quadrado 600×600** — formato clássico (canvas 600×600, renderiza 600×600).
+  Mais alto: **pode** empurrar a assinatura para outra página. Útil quando há
+  pouco texto acima da imagem, ou quando o destino não é o WebRIS. Não é clampado.
 
 ## Arquitetura
 
