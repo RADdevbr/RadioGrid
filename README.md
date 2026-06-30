@@ -83,6 +83,17 @@ livre (nesse caso reduz a altura preservando a proporção original). A constant
 `WEBRIS_MAX_H` é o único botão de ajuste: subi-la dá imagens maiores ao custo de
 mais risco de empurrar a assinatura.
 
+### Toggle de formato (versão web)
+
+No topo do dashboard web há um seletor **"Formato exportado"** com duas opções,
+válido tanto para o Painel quanto para o Comparativo:
+
+- **WebRIS 640×420** (padrão) — canvas deitado 1280×840; a imagem e a assinatura
+  cabem na mesma página do laudo. Passa pela checagem `fitForWebRIS`.
+- **Quadrado 600×600** — formato clássico (canvas 600×600, renderiza 600×600).
+  Mais alto: **pode** empurrar a assinatura para outra página. Útil quando há
+  pouco texto acima da imagem, ou quando o destino não é o WebRIS. Não é clampado.
+
 ## Arquitetura
 
 ```
