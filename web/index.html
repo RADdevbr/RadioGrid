@@ -289,7 +289,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">Formato WebRIS-safe (deitado 640×560, cabe a assinatura) · 1 → proporção original (botão “Girar”) · 2 → 1×2/2×1 (Cortar/Encaixar) · 3–4 → grade 2×2 · “Ajustar” no tile abre girar/pan/zoom</div>
+        <div class="hint" id="panel-hint">Formato WebRIS-safe (deitado 640×420, cabe a assinatura na mesma página) · 1 → proporção original (botão “Girar”) · 2 → 1×2/2×1 (Cortar/Encaixar) · 3–4 → grade 2×2 · “Ajustar” no tile abre girar/pan/zoom</div>
       </div>
     </div>
 
@@ -328,7 +328,7 @@
           <button class="primary" id="cmp-gen-btn" onclick="generateCompare()" disabled>Gerar comparativo</button>
           <button class="danger" id="cmp-clear-btn" onclick="clearCompare()" disabled>Limpar</button>
         </div>
-        <div class="hint">A data de cada lado vira legenda no topo da coluna · saída WebRIS-safe (deitado 640×560) PNG</div>
+        <div class="hint">A data de cada lado vira legenda no topo da coluna · saída WebRIS-safe (deitado 640×420) PNG</div>
       </div>
     </div>
   </section>
@@ -372,7 +372,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.7.0';   // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.8.0';   // marcador de versão exibido no cabeçalho
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
@@ -386,19 +386,24 @@ let nextId = 1;
 
 // --- Geometria WebRIS (Rede D'Or) ---------------------------------------
 // A imagem é colada no editor do laudo; o WebRIS anexa um bloco de assinatura
-// (~135px) FORA do editor. Se a imagem renderizada for mais alta que ~560px,
-// ela empurra a assinatura p/ uma página nova (sobra uma página só com a
-// assinatura). O WebRIS exibe a imagem na largura natural até 640px e, acima
-// disso, reduz p/ 640px mantendo a proporção (a altura escala junto).
+// (~140px) FORA do editor. A imagem é um bloco indivisível: na hora de imprimir
+// (PDF), ela e a assinatura precisam caber JUNTAS na mesma página — senão a
+// assinatura é empurrada sozinha p/ uma página nova.
 //
-// Por isso o canvas-alvo é DEITADO 8:7 a 2× (1280×1120 → renderiza 640×560):
-// preenche os 640px de largura, fica abaixo do teto de 560px de altura e sai
-// nítido. Tudo passa por fitForWebRIS() como garantia final.
-const WEBRIS_W = 640;                         // largura útil da coluna no laudo
-const WEBRIS_MAX_H = 560;                      // teto seguro de altura renderizada
-const EXPORT_SCALE = 2;                        // export 2× p/ nitidez (WebRIS reduz p/ 640)
-const PANEL_W = WEBRIS_W * EXPORT_SCALE;       // 1280 — largura do canvas
-const PANEL_H = WEBRIS_MAX_H * EXPORT_SCALE;   // 1120 — altura do canvas (8:7 deitado)
+// Medido no PDF real do laudo: o WebRIS reduz a imagem p/ a largura da coluna
+// (~640px no PDF) mantendo a proporção. O corpo útil vai de y≈301 (1ª linha de
+// conteúdo, após o cabeçalho) a y≈900 (fundo). Com a assinatura (~140px):
+//   altura_max ≈ 900 − 301 − 140 ≈ 460px de altura RENDERIZADA.
+// Um painel 8:7 (antigo, 1280×1120) renderizava 640×560 — alto demais e
+// empurrava a assinatura. Por isso o alvo agora é DEITADO ~3:2 a 2×
+// (1280×840 → renderiza 640×420): preenche a largura, fica com folga sob o teto
+// de ~460px (robusto até p/ coluna de 686px → ~450px) e sai nítido.
+// WEBRIS_MAX_H é o único botão de ajuste: subir = imagem maior/mais risco.
+const WEBRIS_W = 640;                          // largura útil da coluna no laudo (PDF)
+const WEBRIS_MAX_H = 420;                       // teto seguro de altura renderizada (cabe a assinatura)
+const EXPORT_SCALE = 2;                         // export 2× p/ nitidez (WebRIS reduz p/ 640)
+const PANEL_W = WEBRIS_W * EXPORT_SCALE;        // 1280 — largura do canvas
+const PANEL_H = WEBRIS_MAX_H * EXPORT_SCALE;    // 840 — altura do canvas (deitado ~3:2)
 
 // ---------- importação ----------
 function loadImage(file) {
@@ -566,7 +571,7 @@ function rotatedAspect(im) {
 }
 
 // 1 imagem: exporta na própria proporção (já girada). Renderiza no maior lado
-// possível (PANEL_W, 2×); fitForWebRIS() depois reduz p/ caber em 640×560.
+// possível (PANEL_W, 2×); fitForWebRIS() depois reduz p/ caber em 640×420.
 function composeSingle(im) {
   const { w, h } = imgDim(im);
   const rad = ((im.tf && im.tf.rot) || 0) * Math.PI / 180;
@@ -582,26 +587,26 @@ function composeSingle(im) {
   return canvas;
 }
 
-// 2 imagens → painel deitado 8:7 completo (1280×1120), cada uma ocupando metade:
-//   'row' (1×2) → duas células 640×1120 lado a lado.
-//   'col' (2×1) → duas células 1280×560 empilhadas.
+// 2 imagens → painel deitado ~3:2 completo (1280×840), cada uma ocupando metade:
+//   'row' (1×2) → duas células 640×840 lado a lado.
+//   'col' (2×1) → duas células 1280×420 empilhadas.
 function composeStrip(imgs, orientation, fit) {
   const canvas = document.createElement('canvas');
-  canvas.width = PANEL_W; canvas.height = PANEL_H;   // 1280×1120 (8:7) → renderiza 640×560
+  canvas.width = PANEL_W; canvas.height = PANEL_H;   // 1280×840 (~3:2) → renderiza 640×420
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, PANEL_W, PANEL_H);
   const halfW = PANEL_W / 2, halfH = PANEL_H / 2;
   const cells = orientation === 'row'
-    ? [[0, 0, halfW, PANEL_H], [halfW, 0, halfW, PANEL_H]]   // 640×1120 cada
-    : [[0, 0, PANEL_W, halfH], [0, halfH, PANEL_W, halfH]];  // 1280×560 cada
+    ? [[0, 0, halfW, PANEL_H], [halfW, 0, halfW, PANEL_H]]   // 640×840 cada
+    : [[0, 0, PANEL_W, halfH], [0, halfH, PANEL_W, halfH]];  // 1280×420 cada
   imgs.slice(0, 2).forEach((im, i) => drawCell(ctx, im, ...cells[i], fit));
   return canvas;
 }
 
 // Proporção (w/h) das células de cada orientação do strip de 2 imagens.
-const STRIP_ROW_AR = (PANEL_W / 2) / PANEL_H;  // 640/1120 ≈ 0.571 (célula em pé)
-const STRIP_COL_AR = PANEL_W / (PANEL_H / 2);  // 1280/560 ≈ 2.286 (célula deitada)
+const STRIP_ROW_AR = (PANEL_W / 2) / PANEL_H;  // 640/840 ≈ 0.762 (célula em pé)
+const STRIP_COL_AR = PANEL_W / (PANEL_H / 2);  // 1280/420 ≈ 3.048 (célula deitada)
 
 // Auto: escolhe a orientação cuja célula combina melhor com a proporção das
 // imagens (menos recorte). Verticais → 1×2 (célula em pé); horizontais → 2×1.
@@ -624,8 +629,9 @@ function renderedHeightWebRIS(w, h) {
 
 // Garante que o canvas, colado no WebRIS, renderize com ALTURA ≤ WEBRIS_MAX_H.
 // Se já cabe (largura ≤ 1280 e altura renderizada ≤ 560), devolve sem reprocessar.
-// Senão, reescala preservando proporção p/ caber em 640×560 e exporta a 2×
-// apenas quando a imagem preenche os 640px de largura (aspecto deitado ≥ 8:7);
+// Senão, reescala preservando proporção p/ caber em 640×420 e exporta a 2×
+// apenas quando a imagem preenche os 640px de largura (aspecto deitado o
+// bastante);
 // p/ imagens mais "em pé" o WebRIS reduziria a largura p/ 640 e a altura
 // voltaria a estourar 560 — nesse caso o export é 1×.
 function fitForWebRIS(src) {
@@ -649,12 +655,12 @@ function fitForWebRIS(src) {
 }
 
 // Saída adaptável ao nº de imagens (sempre WebRIS-safe via fitForWebRIS no emit):
-//   1 → própria proporção · 2 → 1×2 ou 2×1 · 3–4 → 8:7 deitado (2×2, 1280×1120).
+//   1 → própria proporção · 2 → 1×2 ou 2×1 · 3–4 → deitado ~3:2 (2×2, 1280×840).
 function composeAdaptive(imgs) {
   const n = Math.min(imgs.length, 4);
   if (n === 1) return composeSingle(imgs[0]);
   if (n === 2) return composeStrip(imgs, resolveLayout(imgs), fitMode);
-  const cw = PANEL_W / 2, ch = PANEL_H / 2;   // células 640×560
+  const cw = PANEL_W / 2, ch = PANEL_H / 2;   // células 640×420
   const canvas = document.createElement('canvas');
   canvas.width = PANEL_W; canvas.height = PANEL_H;
   const ctx = canvas.getContext('2d');
@@ -667,16 +673,16 @@ function composeAdaptive(imgs) {
 }
 
 // Comparativo: duas colunas (anterior | atual), cada uma com 1–2 imagens
-// empilhadas e a data como legenda no topo. Painel deitado 8:7 (1280×1120),
-// sempre WebRIS-safe (renderiza 640×560).
+// empilhadas e a data como legenda no topo. Painel deitado ~3:2 (1280×840),
+// sempre WebRIS-safe (renderiza 640×420).
 const CAP_H = 60; // faixa da legenda (2× p/ nitidez)
 function composeCompare(left, right, leftLabel, rightLabel) {
   const colW = PANEL_W / 2;                            // 640
   const rows = Math.max(left.length, right.length, 1); // 1 ou 2
-  const tileH = Math.floor((PANEL_H - CAP_H) / rows);  // 1060 (1 linha) ou 530 (2 linhas)
+  const tileH = Math.floor((PANEL_H - CAP_H) / rows);  // 780 (1 linha) ou 390 (2 linhas)
   const canvas = document.createElement('canvas');
   canvas.width = PANEL_W;                              // 1280
-  canvas.height = CAP_H + tileH * rows;               // ≈1120
+  canvas.height = CAP_H + tileH * rows;               // ≈840
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
