@@ -216,10 +216,10 @@ class TestImport(unittest.TestCase):
 
 
 class TestWebRISPanelGeometry(unittest.TestCase):
-    """O painel composto deve ser WebRIS-safe: canvas deitado 1280×840 (~3:2),
-    que renderiza ~640×420 no laudo — baixo o bastante para a imagem e o bloco
-    de assinatura caberem JUNTOS na mesma página (medido no PDF: o teto real é
-    ~460px de altura renderizada; 8:7/560px empurrava a assinatura).
+    """O painel composto (app nativo) deve ser WebRIS-safe: 640×500 na largura
+    nativa da coluna do laudo — o WebRIS não reescala (sem distorção) e a altura
+    (500px) deixa a imagem e o bloco de assinatura na mesma página. (Medido no
+    PDF: 525px ainda coube; 560px empurrava a assinatura.)
     """
 
     def setUp(self):
@@ -252,12 +252,13 @@ class TestWebRISPanelGeometry(unittest.TestCase):
         w, h = size
         # Largura natural até 640; acima disso o WebRIS reduz p/ 640.
         rendered_h = h if w <= 640 else h * 640 / w
-        self.assertLessEqual(rendered_h, 420 + 0.5,
-                             f"altura renderizada {rendered_h:.0f}px > 420px")
+        self.assertLessEqual(rendered_h, 500 + 0.5,
+                             f"altura renderizada {rendered_h:.0f}px > 500px")
+        self.assertLessEqual(w, 640 + 0.5, f"largura {w}px > 640px (estoura a coluna)")
 
-    def test_four_images_panel_is_1280x840(self):
+    def test_four_images_panel_is_640x500(self):
         srcs = [self._make_img(f"i{i}.png", (400, 400), (i * 40, 0, 0)) for i in range(4)]
-        self.assertEqual(self._compose(srcs), (1280, 840))
+        self.assertEqual(self._compose(srcs), (640, 500))
 
     def test_panel_is_webris_safe_for_1_to_4(self):
         srcs = [self._make_img(f"j{i}.png", (300 + i * 50, 500), (0, i * 40, 0)) for i in range(4)]

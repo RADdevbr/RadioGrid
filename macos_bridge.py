@@ -155,18 +155,18 @@ import Foundation
 let args = CommandLine.arguments
 let paths = Array(args[1..<(args.count - 1)])
 let outputPath = args.last!
-// Tiles deitados 640×420 → canvas 1280×840 (~3:2). Formato WebRIS-safe: o laudo
-// reduz p/ ~640px de largura, renderizando ~640×420 — imagem e assinatura cabem
-// juntas na mesma página (8:7/560px era alto demais e empurrava a assinatura).
-let tileW: CGFloat = 640, tileH: CGFloat = 420
+// Tiles 320×250 → canvas 640×500 (largura nativa do laudo). Formato WebRIS-safe:
+// o laudo NÃO reescala (sem distorção / sem estourar a impressão) e a altura
+// (500px) deixa imagem e assinatura na mesma página.
+let tileW: CGFloat = 320, tileH: CGFloat = 250
 
-let canvas = NSImage(size: NSSize(width: 1280, height: 840))
+let canvas = NSImage(size: NSSize(width: 640, height: 500))
 canvas.lockFocus()
 NSColor.black.setFill()
-NSRect(x: 0, y: 0, width: 1280, height: 840).fill()
+NSRect(x: 0, y: 0, width: 640, height: 500).fill()
 
-// Origem AppKit é o canto inferior-esquerdo → linha de cima em y = 420.
-let positions: [(CGFloat, CGFloat)] = [(0, 420), (640, 420), (0, 0), (640, 0)]
+// Origem AppKit é o canto inferior-esquerdo → linha de cima em y = 250.
+let positions: [(CGFloat, CGFloat)] = [(0, 250), (320, 250), (0, 0), (320, 0)]
 for (i, path) in paths.prefix(4).enumerated() {
     guard let img = NSImage(contentsOfFile: path) else { continue }
     let (x, y) = positions[i]
@@ -243,29 +243,29 @@ def _compose_stub(image_paths, output_path: str) -> bool:
 
 
 def _compose_pillow(image_paths, output_path: str) -> bool:
-    """Composição 2×2 deitada 1280×840 (~3:2) com Pillow — multiplataforma.
+    """Composição 2×2 em 640×500 (largura nativa do laudo) com Pillow.
 
-    Formato WebRIS-safe: colado no editor do laudo, o WebRIS reduz a imagem
-    para a largura da coluna (~640px), renderizando ~640×420 — baixo o bastante
-    para a imagem E o bloco de assinatura (~140px) caberem JUNTOS na mesma
-    página (8:7/560px era alto demais e empurrava a assinatura). Cada imagem é
-    redimensionada para caber num tile de 640×420 (sem distorção), centralizada.
+    Formato WebRIS-safe: como já sai na largura da coluna (~640px), o WebRIS
+    NÃO reescala — sem distorção, sem estourar a área de impressão — e a altura
+    (500px) deixa a imagem e o bloco de assinatura (~140px) na MESMA página.
+    Cada imagem é redimensionada para caber num tile de 320×250 (sem
+    distorção) e centralizada sobre fundo preto.
     """
     from PIL import Image
 
-    canvas = Image.new("RGB", (1280, 840), (0, 0, 0))
-    # Origem no canto superior-esquerdo (ordem de leitura 2×2); tiles 640×420.
-    positions = [(0, 0), (640, 0), (0, 420), (640, 420)]
+    canvas = Image.new("RGB", (640, 500), (0, 0, 0))
+    # Origem no canto superior-esquerdo (ordem de leitura 2×2); tiles 320×250.
+    positions = [(0, 0), (320, 0), (0, 250), (320, 250)]
     for i, path in enumerate(list(image_paths)[:4]):
         try:
             img = Image.open(path)
             img = img.convert("RGB")
         except Exception:
             continue
-        img.thumbnail((640, 420))  # fit dentro do tile, mantém proporção
+        img.thumbnail((320, 250))  # fit dentro do tile, mantém proporção
         x, y = positions[i]
-        ox = x + (640 - img.width) // 2
-        oy = y + (420 - img.height) // 2
+        ox = x + (320 - img.width) // 2
+        oy = y + (250 - img.height) // 2
         canvas.paste(img, (ox, oy))
     try:
         canvas.save(output_path, "PNG")
@@ -275,12 +275,12 @@ def _compose_pillow(image_paths, output_path: str) -> bool:
 
 
 def compose_panel(image_paths, output_path: str) -> bool:
-    """Gera um painel deitado 1280×840 (~3:2) a partir de 1–4 imagens.
+    """Gera um painel 640×500 (largura nativa do laudo) a partir de 1–4 imagens.
 
     Contrato: fundo preto, cada imagem fit-dentro-do-tile sem distorção,
     grava PNG em output_path. Retorna True em sucesso, False em falha.
-    Formato WebRIS-safe (renderiza ~640×420 no laudo: imagem + assinatura
-    cabem juntas na mesma página).
+    Formato WebRIS-safe: o laudo não reescala (sem distorção) e a altura
+    (500px) deixa imagem + assinatura juntas na mesma página.
 
     Prioriza Pillow (multiplataforma, não depende de swiftc); se indisponível,
     tenta a composição nativa via Swift no macOS; por fim, o stub.
