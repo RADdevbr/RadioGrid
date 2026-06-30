@@ -155,20 +155,23 @@ import Foundation
 let args = CommandLine.arguments
 let paths = Array(args[1..<(args.count - 1)])
 let outputPath = args.last!
-let tileSize: CGFloat = 300
+// Tiles deitados 640×560 → canvas 1280×1120 (8:7). Formato WebRIS-safe: o laudo
+// reduz p/ 640px de largura, renderizando 640×560 (cabe a assinatura na página).
+let tileW: CGFloat = 640, tileH: CGFloat = 560
 
-let canvas = NSImage(size: NSSize(width: 600, height: 600))
+let canvas = NSImage(size: NSSize(width: 1280, height: 1120))
 canvas.lockFocus()
 NSColor.black.setFill()
-NSRect(x: 0, y: 0, width: 600, height: 600).fill()
+NSRect(x: 0, y: 0, width: 1280, height: 1120).fill()
 
-let positions: [(CGFloat, CGFloat)] = [(0, 300), (300, 300), (0, 0), (300, 0)]
+// Origem AppKit é o canto inferior-esquerdo → linha de cima em y = 560.
+let positions: [(CGFloat, CGFloat)] = [(0, 560), (640, 560), (0, 0), (640, 0)]
 for (i, path) in paths.prefix(4).enumerated() {
     guard let img = NSImage(contentsOfFile: path) else { continue }
     let (x, y) = positions[i]
-    let s = min(tileSize / img.size.width, tileSize / img.size.height)
+    let s = min(tileW / img.size.width, tileH / img.size.height)
     let w = img.size.width * s, h = img.size.height * s
-    img.draw(in: NSRect(x: x + (tileSize - w) / 2, y: y + (tileSize - h) / 2, width: w, height: h))
+    img.draw(in: NSRect(x: x + (tileW - w) / 2, y: y + (tileH - h) / 2, width: w, height: h))
 }
 canvas.unlockFocus()
 
@@ -239,26 +242,28 @@ def _compose_stub(image_paths, output_path: str) -> bool:
 
 
 def _compose_pillow(image_paths, output_path: str) -> bool:
-    """Composição 2×2 600×600 com Pillow — multiplataforma, sem swiftc.
+    """Composição 2×2 deitada 1280×1120 (8:7) com Pillow — multiplataforma.
 
-    Cada imagem é redimensionada para caber em um tile de 300×300 (sem
-    distorção) e centralizada sobre fundo preto.
+    Formato WebRIS-safe: colado no editor do laudo, o WebRIS reduz a imagem
+    para 640px de largura, renderizando 640×560 — abaixo do teto que empurraria
+    o bloco de assinatura para uma página nova. Cada imagem é redimensionada
+    para caber num tile de 640×560 (sem distorção) e centralizada sobre preto.
     """
     from PIL import Image
 
-    canvas = Image.new("RGB", (600, 600), (0, 0, 0))
-    # Origem no canto superior-esquerdo (ordem de leitura 2×2).
-    positions = [(0, 0), (300, 0), (0, 300), (300, 300)]
+    canvas = Image.new("RGB", (1280, 1120), (0, 0, 0))
+    # Origem no canto superior-esquerdo (ordem de leitura 2×2); tiles 640×560.
+    positions = [(0, 0), (640, 0), (0, 560), (640, 560)]
     for i, path in enumerate(list(image_paths)[:4]):
         try:
             img = Image.open(path)
             img = img.convert("RGB")
         except Exception:
             continue
-        img.thumbnail((300, 300))  # fit dentro do tile, mantém proporção
+        img.thumbnail((640, 560))  # fit dentro do tile, mantém proporção
         x, y = positions[i]
-        ox = x + (300 - img.width) // 2
-        oy = y + (300 - img.height) // 2
+        ox = x + (640 - img.width) // 2
+        oy = y + (560 - img.height) // 2
         canvas.paste(img, (ox, oy))
     try:
         canvas.save(output_path, "PNG")
@@ -268,10 +273,11 @@ def _compose_pillow(image_paths, output_path: str) -> bool:
 
 
 def compose_panel(image_paths, output_path: str) -> bool:
-    """Gera um painel 600×600 a partir de 1–4 imagens.
+    """Gera um painel deitado 1280×1120 (8:7) a partir de 1–4 imagens.
 
     Contrato: fundo preto, cada imagem fit-dentro-do-tile sem distorção,
     grava PNG em output_path. Retorna True em sucesso, False em falha.
+    Formato WebRIS-safe (renderiza 640×560 no laudo, cabe a assinatura).
 
     Prioriza Pillow (multiplataforma, não depende de swiftc); se indisponível,
     tenta a composição nativa via Swift no macOS; por fim, o stub.

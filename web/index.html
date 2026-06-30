@@ -289,7 +289,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">1 → proporção original (botão “Girar”) · 2 → 600×600 (1×2/2×1; Cortar/Encaixar) · 3–4 → 600×600 (2×2) · “Ajustar” no tile abre girar/pan/zoom</div>
+        <div class="hint" id="panel-hint">Formato WebRIS-safe (deitado 640×560, cabe a assinatura) · 1 → proporção original (botão “Girar”) · 2 → 1×2/2×1 (Cortar/Encaixar) · 3–4 → grade 2×2 · “Ajustar” no tile abre girar/pan/zoom</div>
       </div>
     </div>
 
@@ -328,7 +328,7 @@
           <button class="primary" id="cmp-gen-btn" onclick="generateCompare()" disabled>Gerar comparativo</button>
           <button class="danger" id="cmp-clear-btn" onclick="clearCompare()" disabled>Limpar</button>
         </div>
-        <div class="hint">A data de cada lado vira legenda no topo da coluna · saída no máximo 600×600 PNG</div>
+        <div class="hint">A data de cada lado vira legenda no topo da coluna · saída WebRIS-safe (deitado 640×560) PNG</div>
       </div>
     </div>
   </section>
@@ -372,7 +372,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.6.0';   // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.7.0';   // marcador de versão exibido no cabeçalho
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
@@ -384,7 +384,21 @@ let panels = [];                    // gerados na sessão: { id, name, number, u
 let panelCounter = 0;
 let nextId = 1;
 
-const TILE = 300, CANVAS = 600;
+// --- Geometria WebRIS (Rede D'Or) ---------------------------------------
+// A imagem é colada no editor do laudo; o WebRIS anexa um bloco de assinatura
+// (~135px) FORA do editor. Se a imagem renderizada for mais alta que ~560px,
+// ela empurra a assinatura p/ uma página nova (sobra uma página só com a
+// assinatura). O WebRIS exibe a imagem na largura natural até 640px e, acima
+// disso, reduz p/ 640px mantendo a proporção (a altura escala junto).
+//
+// Por isso o canvas-alvo é DEITADO 8:7 a 2× (1280×1120 → renderiza 640×560):
+// preenche os 640px de largura, fica abaixo do teto de 560px de altura e sai
+// nítido. Tudo passa por fitForWebRIS() como garantia final.
+const WEBRIS_W = 640;                         // largura útil da coluna no laudo
+const WEBRIS_MAX_H = 560;                      // teto seguro de altura renderizada
+const EXPORT_SCALE = 2;                        // export 2× p/ nitidez (WebRIS reduz p/ 640)
+const PANEL_W = WEBRIS_W * EXPORT_SCALE;       // 1280 — largura do canvas
+const PANEL_H = WEBRIS_MAX_H * EXPORT_SCALE;   // 1120 — altura do canvas (8:7 deitado)
 
 // ---------- importação ----------
 function loadImage(file) {
@@ -523,8 +537,6 @@ function drawCell(ctx, im, x, y, w, h, fit) {
   ctx.restore();
 }
 
-const STRIP_SIDE = 600; // lado normalizado (altura no 1×2, largura no 2×1)
-
 function imgDim(im) {
   return { w: im.el.naturalWidth || im.el.width || 1, h: im.el.naturalHeight || im.el.height || 1 };
 }
@@ -553,13 +565,14 @@ function rotatedAspect(im) {
   return (w * ac + h * as) / (w * as + h * ac);
 }
 
-// 1 imagem: exporta na própria proporção (já girada), lado maior = STRIP_SIDE.
+// 1 imagem: exporta na própria proporção (já girada). Renderiza no maior lado
+// possível (PANEL_W, 2×); fitForWebRIS() depois reduz p/ caber em 640×560.
 function composeSingle(im) {
   const { w, h } = imgDim(im);
   const rad = ((im.tf && im.tf.rot) || 0) * Math.PI / 180;
   const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
   const ew = w * ac + h * as, eh = w * as + h * ac;
-  const s = STRIP_SIDE / Math.max(ew, eh);
+  const s = PANEL_W / Math.max(ew, eh);
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(ew * s));
   canvas.height = Math.max(1, Math.round(eh * s));
@@ -569,63 +582,101 @@ function composeSingle(im) {
   return canvas;
 }
 
-// 2 imagens → quadrado 600×600 completo, cada uma ocupando metade:
-//   'row' (1×2) → duas células 300×600 lado a lado.
-//   'col' (2×1) → duas células 600×300 empilhadas.
+// 2 imagens → painel deitado 8:7 completo (1280×1120), cada uma ocupando metade:
+//   'row' (1×2) → duas células 640×1120 lado a lado.
+//   'col' (2×1) → duas células 1280×560 empilhadas.
 function composeStrip(imgs, orientation, fit) {
   const canvas = document.createElement('canvas');
-  canvas.width = CANVAS; canvas.height = CANVAS;     // 600×600 fixo
+  canvas.width = PANEL_W; canvas.height = PANEL_H;   // 1280×1120 (8:7) → renderiza 640×560
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, CANVAS, CANVAS);
-  const half = CANVAS / 2;
+  ctx.fillRect(0, 0, PANEL_W, PANEL_H);
+  const halfW = PANEL_W / 2, halfH = PANEL_H / 2;
   const cells = orientation === 'row'
-    ? [[0, 0, half, CANVAS], [half, 0, half, CANVAS]]   // 300×600 cada
-    : [[0, 0, CANVAS, half], [0, half, CANVAS, half]];  // 600×300 cada
+    ? [[0, 0, halfW, PANEL_H], [halfW, 0, halfW, PANEL_H]]   // 640×1120 cada
+    : [[0, 0, PANEL_W, halfH], [0, halfH, PANEL_W, halfH]];  // 1280×560 cada
   imgs.slice(0, 2).forEach((im, i) => drawCell(ctx, im, ...cells[i], fit));
   return canvas;
 }
 
+// Proporção (w/h) das células de cada orientação do strip de 2 imagens.
+const STRIP_ROW_AR = (PANEL_W / 2) / PANEL_H;  // 640/1120 ≈ 0.571 (célula em pé)
+const STRIP_COL_AR = PANEL_W / (PANEL_H / 2);  // 1280/560 ≈ 2.286 (célula deitada)
+
 // Auto: escolhe a orientação cuja célula combina melhor com a proporção das
-// imagens (menos recorte). Verticais → 1×2 (célula 300×600); horizontais → 2×1.
+// imagens (menos recorte). Verticais → 1×2 (célula em pé); horizontais → 2×1.
 function autoOrientation(imgs) {
   const ar = imgs.map(im => { const d = imgDim(im); return d.w / d.h; });
   const avg = ar.reduce((s, a) => s + a, 0) / ar.length;
-  const rowCost = Math.abs(Math.log(avg / 0.5)); // célula 300×600 → ar 0.5
-  const colCost = Math.abs(Math.log(avg / 2));   // célula 600×300 → ar 2.0
+  const rowCost = Math.abs(Math.log(avg / STRIP_ROW_AR));
+  const colCost = Math.abs(Math.log(avg / STRIP_COL_AR));
   return rowCost <= colCost ? 'row' : 'col';
 }
 function resolveLayout(imgs) {
   return panelLayout === 'auto' ? autoOrientation(imgs) : panelLayout;
 }
 
-// Saída adaptável ao nº de imagens:
-//   1 → própria proporção · 2 → 1×2 ou 2×1 (sem barras) · 3–4 → 600×600 (2×2).
+// Altura que o WebRIS renderiza p/ um canvas w×h: largura natural até 640px;
+// acima disso reduz p/ 640 e a altura escala junto.
+function renderedHeightWebRIS(w, h) {
+  return w <= WEBRIS_W ? h : h * WEBRIS_W / w;
+}
+
+// Garante que o canvas, colado no WebRIS, renderize com ALTURA ≤ WEBRIS_MAX_H.
+// Se já cabe (largura ≤ 1280 e altura renderizada ≤ 560), devolve sem reprocessar.
+// Senão, reescala preservando proporção p/ caber em 640×560 e exporta a 2×
+// apenas quando a imagem preenche os 640px de largura (aspecto deitado ≥ 8:7);
+// p/ imagens mais "em pé" o WebRIS reduziria a largura p/ 640 e a altura
+// voltaria a estourar 560 — nesse caso o export é 1×.
+function fitForWebRIS(src) {
+  if (src.width <= PANEL_W && renderedHeightWebRIS(src.width, src.height) <= WEBRIS_MAX_H) {
+    return src;
+  }
+  const scale = Math.min(WEBRIS_W / src.width, WEBRIS_MAX_H / src.height);
+  const dispW = Math.max(1, Math.round(src.width * scale));
+  const dispH = Math.max(1, Math.round(src.height * scale));
+  const exp = dispW >= WEBRIS_W ? EXPORT_SCALE : 1;
+  const out = document.createElement('canvas');
+  out.width = dispW * exp;
+  out.height = dispH * exp;
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(src, 0, 0, out.width, out.height);
+  return out;
+}
+
+// Saída adaptável ao nº de imagens (sempre WebRIS-safe via fitForWebRIS no emit):
+//   1 → própria proporção · 2 → 1×2 ou 2×1 · 3–4 → 8:7 deitado (2×2, 1280×1120).
 function composeAdaptive(imgs) {
   const n = Math.min(imgs.length, 4);
   if (n === 1) return composeSingle(imgs[0]);
   if (n === 2) return composeStrip(imgs, resolveLayout(imgs), fitMode);
+  const cw = PANEL_W / 2, ch = PANEL_H / 2;   // células 640×560
   const canvas = document.createElement('canvas');
-  canvas.width = 2 * TILE; canvas.height = 2 * TILE;
+  canvas.width = PANEL_W; canvas.height = PANEL_H;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   for (let i = 0; i < n; i++) {
-    drawCell(ctx, imgs[i], (i % 2) * TILE, Math.floor(i / 2) * TILE, TILE, TILE, 'contain');
+    drawCell(ctx, imgs[i], (i % 2) * cw, Math.floor(i / 2) * ch, cw, ch, 'contain');
   }
   return canvas;
 }
 
 // Comparativo: duas colunas (anterior | atual), cada uma com 1–2 imagens
-// empilhadas e a data como legenda no topo. Teto de 600×600.
-const CAP_H = 30; // faixa da legenda (compacta)
+// empilhadas e a data como legenda no topo. Painel deitado 8:7 (1280×1120),
+// sempre WebRIS-safe (renderiza 640×560).
+const CAP_H = 60; // faixa da legenda (2× p/ nitidez)
 function composeCompare(left, right, leftLabel, rightLabel) {
-  const colW = TILE;                                  // 300
+  const colW = PANEL_W / 2;                            // 640
   const rows = Math.max(left.length, right.length, 1); // 1 ou 2
-  const tileH = rows === 1 ? TILE : Math.floor((CANVAS - CAP_H) / rows); // 300 ou 285
+  const tileH = Math.floor((PANEL_H - CAP_H) / rows);  // 1060 (1 linha) ou 530 (2 linhas)
   const canvas = document.createElement('canvas');
-  canvas.width = 2 * colW;                            // 600
-  canvas.height = CAP_H + tileH * rows;              // 330 (1 linha) ou 600 (2 linhas)
+  canvas.width = PANEL_W;                              // 1280
+  canvas.height = CAP_H + tileH * rows;               // ≈1120
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -636,7 +687,7 @@ function composeCompare(left, right, leftLabel, rightLabel) {
     ctx.fillStyle = '#161B22';
     ctx.fillRect(c.x, 0, colW, CAP_H);
     ctx.fillStyle = '#E6EDF3';
-    ctx.font = '600 15px Inter, system-ui, sans-serif';
+    ctx.font = '600 30px Inter, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(c.label, c.x + colW / 2, CAP_H / 2, colW - 12);
@@ -671,7 +722,10 @@ function emitPanel(canvas, kind, restore) {
   panelCounter++;
   const number = panelCounter;
   const suffix = kind === 'compare' ? 'comparativo' : 'panel';
-  canvas.toBlob((blob) => {
+  // Garantia final: a imagem renderiza com altura ≤ 560px no WebRIS (cabe a
+  // assinatura na mesma página).
+  const out = fitForWebRIS(canvas);
+  out.toBlob((blob) => {
     if (!blob) { toast('red', 'Falha ao gerar', 'Não foi possível compor o PNG'); return; }
     const url = URL.createObjectURL(blob);
     const file = `${name}_${suffix}_${number}.png`;
@@ -896,13 +950,13 @@ function tileThumb(im) {
 // Proporção (w/h) e fit da célula de cada contexto, para o overlay ser fiel.
 function panelCell() {
   const n = images.length;
-  if (n === 2) { const o = resolveLayout(images); return { aspect: o === 'row' ? 0.5 : 2, fit: fitMode }; }
-  return { aspect: 1, fit: 'contain' }; // 2×2
+  if (n === 2) { const o = resolveLayout(images); return { aspect: o === 'row' ? STRIP_ROW_AR : STRIP_COL_AR, fit: fitMode }; }
+  return { aspect: (PANEL_W / 2) / (PANEL_H / 2), fit: 'contain' }; // 2×2 → 640/560
 }
 function compareCell() {
   const rows = Math.max(cmp.left.length, cmp.right.length, 1);
-  const tileH = rows === 1 ? TILE : Math.floor((CANVAS - CAP_H) / rows);
-  return { aspect: TILE / tileH, fit: 'contain' };
+  const tileH = Math.floor((PANEL_H - CAP_H) / rows);
+  return { aspect: (PANEL_W / 2) / tileH, fit: 'contain' };
 }
 
 let adj = null; // { im, fit, aspect, single }
