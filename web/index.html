@@ -106,6 +106,29 @@
   .config-row { margin-bottom: 16px; }
   .config-row:last-child { margin-bottom: 0; }
   .config-row label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+
+  /* ---------- Contexto do Laudo-Guard ---------- */
+  #lg-card { margin-bottom: 14px; border-color: var(--accent-dim); background: linear-gradient(180deg, rgba(0,180,216,.06), transparent), var(--bg-elev); }
+  .lg-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .lg-head-l { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lg-title { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  .lg-status { font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
+  .lg-status.on { color: var(--green); }
+  .lg-status.off { color: var(--text-dim); }
+  .lg-btn { padding: 7px 14px; font-size: 12px; border-radius: 8px; }
+  .lg-grid { display: grid; grid-template-columns: 96px 1fr; gap: 9px 14px; font-size: 13px; align-items: center; margin-top: 14px; }
+  .lg-grid .lg-k { color: var(--text-dim); }
+  .lg-grid .lg-v { color: var(--text); }
+  .lg-grid .lg-v.mono { font-family: var(--mono); font-size: 14px; }
+  .lg-opts { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
+  .lg-check { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; color: var(--text); }
+  .lg-check input { width: 17px; height: 17px; accent-color: var(--accent); cursor: pointer; }
+  .lg-check b { color: var(--text); }
+  .lg-pos { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .lg-pos .lg-k { font-size: 12px; color: var(--text-dim); }
+  .lg-pos .mode-switch { margin-bottom: 0; }
+  .lg-pos.disabled { opacity: .4; pointer-events: none; }
+
   .dropzone { border: 1.5px dashed var(--border); border-radius: 8px; padding: 18px; min-height: 250px; color: var(--text-dim); font-size: 13px; display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; transition: border-color .15s, background .15s; }
   .dropzone.drag { border-color: var(--accent); background: rgba(44,200,237,.08); color: var(--text); }
 
@@ -241,9 +264,37 @@
   <!-- Nome do paciente -->
   <section>
     <div class="section-title">Paciente</div>
+
+    <!-- Contexto vindo do Laudo-Guard (extensão) -->
+    <div class="config-card" id="lg-card">
+      <div class="lg-head">
+        <div class="lg-head-l">
+          <span class="lg-title">Contexto do Laudo-Guard</span>
+          <span id="lg-status" class="lg-status off">● aguardando</span>
+        </div>
+        <button id="lg-pull" class="primary lg-btn" onclick="pedirContextoLaudoGuard()">↻ Puxar do Laudo-Guard</button>
+      </div>
+      <div class="lg-grid" id="lg-data" hidden>
+        <span class="lg-k">Paciente</span><span class="lg-v" id="lg-nome">—</span>
+        <span class="lg-k">ID paciente</span><span class="lg-v mono" id="lg-id">—</span>
+        <span class="lg-k">Exame</span><span class="lg-v" id="lg-exame">—</span>
+      </div>
+      <div class="lg-opts">
+        <label class="lg-check"><input type="checkbox" id="lg-incluir-nome"> Incluir <b>nome do paciente</b> no arquivo exportado</label>
+        <label class="lg-check"><input type="checkbox" id="lg-legenda"> Imprimir <b>legenda</b> com os dados na imagem</label>
+        <div class="lg-pos" id="lg-legenda-pos-row">
+          <span class="lg-k">Posição da legenda</span>
+          <div class="mode-switch sm" id="lg-legenda-pos">
+            <button type="button" data-pos="overlay" class="active">Overlay na base</button>
+            <button type="button" data-pos="strip">Faixa extra abaixo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="config-card">
       <div class="config-row">
-        <label>Nome do paciente (opcional — usado só no nome do arquivo exportado)</label>
+        <label>Nome do paciente (fallback — usado só se não vier contexto do Laudo-Guard)</label>
         <input type="text" id="patient" placeholder="Opcional — em branco usa &quot;SEM NOME&quot;">
       </div>
     </div>
@@ -384,7 +435,11 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.10.0';  // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.11.0';  // marcador de versão exibido no cabeçalho
+
+// Contexto de paciente recebido do Laudo-Guard (extensão) via postMessage.
+let risPaciente = '', risIdPaciente = '', risExame = '', risFonte = '';
+let legendaPos = 'overlay';         // 'overlay' (na base, mantém tamanho) | 'strip' (faixa extra abaixo)
 
 // Estado em memória — nada é persistido.
 let mode = 'panel';                 // 'panel' | 'compare'
@@ -758,13 +813,19 @@ function generatePanel() {
 
 // Compõe → registra na galeria. `kind` define o sufixo; `restore` permite reabrir.
 function emitPanel(canvas, kind, restore) {
-  const name = safeName($('patient').value);
+  // Nome do arquivo: usa o contexto do Laudo-Guard quando presente (ID + exame, e
+  // opcionalmente o nome), com fallback pro campo #patient.
+  const comNome = $('lg-incluir-nome').checked;
+  const partes = comNome ? [risPaciente, risIdPaciente, risExame] : [risIdPaciente, risExame];
+  const name = safeName(partes.filter(Boolean).join(' ') || $('patient').value);
   panelCounter++;
   const number = panelCounter;
   const suffix = kind === 'compare' ? 'comparativo' : 'panel';
   // Só o 'sharp2x' (1280×840) passa pelo clamp p/ ≤420px renderidos. Os formatos
   // nativos (webris 640×500 e quadrado 600×600) já saem no tamanho final.
-  const out = EXPORT_FORMATS[exportFormat].clamp ? fitForWebRIS(canvas) : canvas;
+  const clamped = EXPORT_FORMATS[exportFormat].clamp ? fitForWebRIS(canvas) : canvas;
+  // Legenda opcional impressa na imagem (aplicada por último, depois do clamp).
+  const out = aplicarLegenda(clamped, comNome);
   out.toBlob((blob) => {
     if (!blob) { toast('red', 'Falha ao gerar', 'Não foi possível compor o PNG'); return; }
     const url = URL.createObjectURL(blob);
@@ -1120,6 +1181,123 @@ function adjustZoom(delta) {
   bind();
 })();
 
+// ---------- ponte Laudo-Guard (extensão) ----------
+// A extensão injeta content_radiogrid_bridge.js nesta página e responde a
+// REQUEST_RIS_CONTEXT com o paciente do RIS ativo (WebRIS etc.).
+function pedirContextoLaudoGuard() {
+  window.postMessage({ source: 'radiogrid', type: 'REQUEST_RIS_CONTEXT' }, '*');
+}
+
+function atualizarContextoUI(conectado) {
+  const st = $('lg-status');
+  if (conectado) {
+    st.textContent = '● conectado' + (risFonte ? ' · ' + risFonte.toUpperCase() : '');
+    st.className = 'lg-status on';
+    $('lg-data').hidden = false;
+    $('lg-nome').textContent = risPaciente || '—';
+    $('lg-id').textContent = risIdPaciente || '—';
+    $('lg-exame').textContent = risExame || '—';
+  } else {
+    st.textContent = '● aguardando';
+    st.className = 'lg-status off';
+    $('lg-data').hidden = true;
+  }
+}
+
+window.addEventListener('message', (ev) => {
+  if (ev.source !== window) return;
+  const m = ev.data;
+  if (!m || m.source !== 'laudoguard-ext' || m.type !== 'RIS_CONTEXT') return;
+  const p = m.payload;
+  if (p && (p.idPaciente || p.paciente || p.exame)) {
+    risPaciente = p.paciente || '';
+    risIdPaciente = p.idPaciente || '';
+    risExame = p.exame || '';
+    risFonte = p.fonte || '';
+    atualizarContextoUI(true);
+    toast('green', '✓ Contexto recebido', `${risPaciente || risIdPaciente || 'paciente'} · ${(risFonte || 'RIS').toUpperCase()}`);
+  } else {
+    atualizarContextoUI(false);
+    toast('yellow', 'Nenhum RIS ativo', 'Abra um exame no RIS (ex.: WebRIS) e tente de novo');
+  }
+});
+
+// ---------- legenda impressa na imagem ----------
+function textoLegenda(comNome) {
+  return [comNome ? risPaciente : '', risIdPaciente ? 'ID ' + risIdPaciente : '', risExame]
+    .filter(Boolean).join('  ·  ');
+}
+
+// Desenha a faixa (fundo + barra accent + texto truncado) em (x,y,w,h).
+function desenharFaixaLegenda(ctx, x, y, w, h, txt) {
+  const fontPx = Math.round(w * 13 / 640);
+  const pad = Math.round(w * 12 / 640);
+  ctx.save();
+  ctx.fillStyle = 'rgba(6,10,16,0.82)';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#00B4D8';
+  ctx.fillRect(x, y, Math.max(2, Math.round(w * 3 / 640)), h);
+  ctx.fillStyle = '#E6EDF3';
+  ctx.font = fontPx + "px ui-monospace, 'JetBrains Mono', monospace";
+  ctx.textBaseline = 'middle';
+  let s = txt;
+  const maxW = w - pad * 2;
+  if (ctx.measureText(s).width > maxW) {
+    while (s.length > 4 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+    s += '…';
+  }
+  ctx.fillText(s, x + pad, y + h / 2 + Math.round(fontPx * 0.08));
+  ctx.restore();
+}
+
+// Aplica a legenda ao canvas final quando o checkbox está ligado.
+//   overlay → faixa semitransparente na base (mantém as dimensões);
+//   strip   → tarja sólida ADICIONADA abaixo (retorna canvas mais alto).
+function aplicarLegenda(canvas, comNome) {
+  if (!$('lg-legenda').checked) return canvas;
+  const txt = textoLegenda(comNome);
+  if (!txt) return canvas;
+  const W = canvas.width;
+  const BAR = Math.round(W * 30 / 640);
+  if (legendaPos === 'strip') {
+    const out = document.createElement('canvas');
+    out.width = W; out.height = canvas.height + BAR;
+    const ctx = out.getContext('2d');
+    ctx.fillStyle = '#0D1117';
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(canvas, 0, 0);
+    desenharFaixaLegenda(ctx, 0, canvas.height, W, BAR, txt);
+    return out;
+  }
+  desenharFaixaLegenda(canvas.getContext('2d'), 0, canvas.height - BAR, W, BAR, txt);
+  return canvas;
+}
+
+// ---------- preferências (localStorage) ----------
+function atualizarLegendaPosUI() {
+  [...$('lg-legenda-pos').querySelectorAll('button')]
+    .forEach(b => b.classList.toggle('active', b.dataset.pos === legendaPos));
+}
+function atualizarLegendaPosDisponivel() {
+  $('lg-legenda-pos-row').classList.toggle('disabled', !$('lg-legenda').checked);
+}
+function lgSavePrefs() {
+  try {
+    localStorage.setItem('rg_incluir_nome', $('lg-incluir-nome').checked ? '1' : '0');
+    localStorage.setItem('rg_legenda', $('lg-legenda').checked ? '1' : '0');
+    localStorage.setItem('rg_legenda_pos', legendaPos);
+  } catch (_) {}
+}
+function lgLoadPrefs() {
+  try {
+    $('lg-incluir-nome').checked = localStorage.getItem('rg_incluir_nome') === '1';
+    $('lg-legenda').checked = localStorage.getItem('rg_legenda') === '1';
+    legendaPos = localStorage.getItem('rg_legenda_pos') === 'strip' ? 'strip' : 'overlay';
+  } catch (_) {}
+  atualizarLegendaPosUI();
+  atualizarLegendaPosDisponivel();
+}
+
 // ---------- init ----------
 (function init() {
   $('app-version').textContent = APP_VERSION;
@@ -1128,6 +1306,15 @@ function adjustZoom(delta) {
   renderCompare();
   renderPanels();
   setupDropzone();
+
+  // Contexto do Laudo-Guard: preferências + eventos + pedido inicial.
+  lgLoadPrefs();
+  $('lg-incluir-nome').addEventListener('change', lgSavePrefs);
+  $('lg-legenda').addEventListener('change', () => { lgSavePrefs(); atualizarLegendaPosDisponivel(); });
+  [...$('lg-legenda-pos').querySelectorAll('button')].forEach(b =>
+    b.addEventListener('click', () => { legendaPos = b.dataset.pos; atualizarLegendaPosUI(); lgSavePrefs(); }));
+  atualizarContextoUI(false);
+  pedirContextoLaudoGuard();
 })();
 </script>
 </body>
