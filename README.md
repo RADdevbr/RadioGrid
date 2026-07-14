@@ -60,6 +60,25 @@ O workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml) publica
 a pasta `web/` automaticamente — basta habilitar uma vez em
 **Settings → Pages → Source = "GitHub Actions"**.
 
+### Integração com o Laudo-Guard
+
+O RadioGrid não guarda dados de paciente. Quando a extensão **Laudo-Guard** está
+instalada e há um exame aberto num RIS (ex.: WebRIS), a versão web publicada em
+`https://raddevbr.github.io/RadioGrid/` recebe automaticamente o **ID do paciente
++ nome do exame** — o botão **"Puxar do Laudo-Guard"** força uma nova leitura. Com
+isso:
+
+- o **nome do arquivo** exportado sai como `ID_EXAME` (e `NOME_ID_EXAME` se o
+  checkbox *"Incluir nome do paciente no arquivo"* estiver ligado);
+- opcionalmente, o checkbox *"Imprimir legenda"* escreve `ID · Exame` (e o nome,
+  se ligado) na imagem gerada — como **overlay na base** (mantém 640×500) ou como
+  **faixa extra abaixo**.
+
+Ambos os checkboxes nascem **desligados** (privacidade) e a preferência é lembrada
+no navegador. Sem a extensão, o campo de nome manual continua funcionando como
+fallback. A ponte usa `window.postMessage`; abrir o `web/index.html` local
+(`file://`) não recebe o contexto — use a publicação no GitHub Pages.
+
 ## Formato WebRIS-safe
 
 Os painéis são gerados num **canvas 640×500 px** (largura nativa da coluna)
