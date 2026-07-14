@@ -352,7 +352,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">Tamanho conforme o “Formato exportado” acima · 1 → proporção original (botão “Girar”) · 2 → 1×2/2×1 (Cortar/Encaixar) · 3–4 → grade 2×2 · “Ajustar” no tile abre girar/pan/zoom</div>
+        <div class="hint" id="panel-hint">Tamanho conforme o “Formato exportado” acima · 1 → própria proporção · 2 → 1×2/2×1 (Cortar/Encaixar) · 3–4 → grade 2×2 · “Ajustar” no tile abre girar/pan/zoom</div>
       </div>
     </div>
 
@@ -435,7 +435,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.11.0';  // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.12.0';  // marcador de versão exibido no cabeçalho
 
 // Contexto de paciente recebido do Laudo-Guard (extensão) via postMessage.
 let risPaciente = '', risIdPaciente = '', risExame = '', risFonte = '';
@@ -534,15 +534,15 @@ function renderEditor() {
       const rm = document.createElement('button'); rm.className = 'remove'; rm.textContent = '×';
       rm.onclick = (e) => { e.stopPropagation(); removeImage(img.id); };
       const thumb = tileThumb(img);
-      // 1 imagem → só rotação (sai na proporção original); 2+ → célula com pan/zoom/girar.
+      // 1 imagem → própria proporção com girar/pan/zoom; 2+ → célula com pan/zoom/girar.
       const openIt = () => {
         if (images.length >= 2) { const c = panelCell(); openAdjust(img, { aspect: c.aspect, fit: c.fit }); }
         else openAdjust(img, { single: true });
       };
       thumb.onclick = openIt;
       const adjb = document.createElement('button'); adjb.className = 'adjust-btn';
-      adjb.textContent = images.length >= 2 ? 'Ajustar' : 'Girar';
-      adjb.title = images.length >= 2 ? 'Ajustar enquadramento (girar/pan/zoom)' : 'Girar imagem';
+      adjb.textContent = 'Ajustar';
+      adjb.title = 'Ajustar enquadramento (girar/pan/zoom)';
       adjb.onclick = (e) => { e.stopPropagation(); openIt(); };
       tile.appendChild(thumb); tile.appendChild(pos); tile.appendChild(adjb); tile.appendChild(rm);
     } else {
@@ -631,22 +631,6 @@ function imgDim(im) {
   return { w: im.el.naturalWidth || im.el.width || 1, h: im.el.naturalHeight || im.el.height || 1 };
 }
 
-// Desenha a imagem (com rotação) preenchendo cw×ch, que já vem na proporção do
-// bounding box girado — usado na imagem única e no preview do overlay single.
-function drawSingleInto(ctx, im, cw, ch) {
-  const el = im.el;
-  const iw = el.naturalWidth || el.width, ih = el.naturalHeight || el.height;
-  if (!iw || !ih) return;
-  const rad = ((im.tf && im.tf.rot) || 0) * Math.PI / 180;
-  const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
-  const ew = iw * ac + ih * as, eh = iw * as + ih * ac;
-  const s = Math.min(cw / ew, ch / eh);
-  ctx.save();
-  ctx.translate(cw / 2, ch / 2); ctx.rotate(rad);
-  ctx.drawImage(el, -iw * s / 2, -ih * s / 2, iw * s, ih * s);
-  ctx.restore();
-}
-
 // Proporção (w/h) do bounding box já girado de uma imagem.
 function rotatedAspect(im) {
   const { w, h } = imgDim(im);
@@ -670,7 +654,8 @@ function composeSingle(im) {
   canvas.height = Math.max(1, Math.round(eh * s));
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-  drawSingleInto(ctx, im, canvas.width, canvas.height);
+  // Mesmo caminho da célula (aplica zoom/pan de im.tf); com zoom=1 preenche igual.
+  drawCell(ctx, im, 0, 0, canvas.width, canvas.height, 'contain');
   return canvas;
 }
 
@@ -1078,8 +1063,8 @@ function openAdjust(im, opts) {
   adj = { im, fit: opts.fit || 'cover', aspect: opts.aspect, single: !!opts.single };
   $('adjust-zoom').value = im.tf.zoom || 1;
   $('adjust-rot').value = im.tf.rot || 0;
-  $('zoom-ctrls').style.display = adj.single ? 'none' : 'flex';
-  $('adjust-canvas').style.cursor = adj.single ? 'default' : 'grab';
+  $('zoom-ctrls').style.display = 'flex';   // zoom/pan disponível também p/ 1 imagem
+  $('adjust-canvas').style.cursor = 'grab';
   adjRender();
   $('adjust').style.display = 'flex';
 }
@@ -1092,8 +1077,9 @@ function adjRender() {
   canvas.height = aspect >= 1 ? Math.round(LONG / aspect) : LONG;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-  if (adj.single) drawSingleInto(ctx, adj.im, canvas.width, canvas.height);
-  else drawCell(ctx, adj.im, 0, 0, canvas.width, canvas.height, adj.fit);
+  // Single usa a própria proporção (canvas = bbox girado) com fit 'contain':
+  // zoom=1 preenche exatamente (idêntico ao anterior); zoom>1 recorta.
+  drawCell(ctx, adj.im, 0, 0, canvas.width, canvas.height, adj.single ? 'contain' : adj.fit);
 }
 function adjustClose() {
   $('adjust').style.display = 'none';
@@ -1121,12 +1107,12 @@ function adjustRotate(delta) {
   adjRender();
 }
 function adjustSetZoom(v) {
-  if (!adj || adj.single) return;
+  if (!adj) return;
   adj.im.tf.zoom = Math.max(1, Math.min(4, parseFloat(v) || 1));
   adjRender();
 }
 function adjustZoom(delta) {
-  if (!adj || adj.single) return;
+  if (!adj) return;
   adjustSetZoom((adj.im.tf.zoom || 1) + delta);
   $('adjust-zoom').value = adj.im.tf.zoom;
 }
@@ -1141,7 +1127,7 @@ function adjustZoom(delta) {
     return { dx: dxClient * (c.width / r.width), dy: dyClient * (c.height / r.height) };
   }
   function pan(dxClient, dyClient) {
-    if (!adj || adj.single) return;
+    if (!adj) return;
     const c = stage();
     const { dx, dy } = toInternalDelta(dxClient, dyClient);
     const d = imgDim(adj.im);
