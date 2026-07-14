@@ -115,6 +115,8 @@
   .lg-status { font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
   .lg-status.on { color: var(--green); }
   .lg-status.off { color: var(--text-dim); }
+  .lg-status.warn { color: var(--yellow); }
+  #lg-card.warn { border-color: var(--yellow); background: linear-gradient(180deg, rgba(210,153,34,.10), transparent), var(--bg-elev); }
   .lg-btn { padding: 7px 14px; font-size: 12px; border-radius: 8px; }
   .lg-grid { display: grid; grid-template-columns: 96px 1fr; gap: 9px 14px; font-size: 13px; align-items: center; margin-top: 14px; }
   .lg-grid .lg-k { color: var(--text-dim); }
@@ -272,7 +274,7 @@
           <span class="lg-title">Contexto do Laudo-Guard</span>
           <span id="lg-status" class="lg-status off">● aguardando</span>
         </div>
-        <button id="lg-pull" class="primary lg-btn" onclick="pedirContextoLaudoGuard()">↻ Puxar do Laudo-Guard</button>
+        <button id="lg-pull" class="primary lg-btn" onclick="pedirContextoLaudoGuard(true)">↻ Puxar do Laudo-Guard</button>
       </div>
       <div class="lg-grid" id="lg-data" hidden>
         <span class="lg-k">Paciente</span><span class="lg-v" id="lg-nome">—</span>
@@ -435,10 +437,12 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.12.0';  // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.13.0';  // marcador de versão exibido no cabeçalho
 
 // Contexto de paciente recebido do Laudo-Guard (extensão) via postMessage.
 let risPaciente = '', risIdPaciente = '', risExame = '', risFonte = '';
+let ultimoCtxKey = null;        // chave (id|exame) do último contexto aplicado — p/ detectar troca
+let manualPullUntil = 0;        // janela em que um pedido manual pede confirmação por toast
 let legendaPos = 'overlay';         // 'overlay' (na base, mantém tamanho) | 'strip' (faixa extra abaixo)
 
 // Estado em memória — nada é persistido.
@@ -570,6 +574,7 @@ function removeImage(id) {
 function clearEditor() {
   images = [];
   renderEditor();
+  limparAvisoContexto();
 }
 
 function bindReorder() {
@@ -817,6 +822,7 @@ function emitPanel(canvas, kind, restore) {
     const file = `${name}_${suffix}_${number}.png`;
     panels.unshift({ id: nextId++, name, number, url, file, restore, at: new Date() });
     renderPanels();
+    limparAvisoContexto();
     toast('green', '✓ Imagem gerada', `${name} · #${number} — veja na galeria abaixo`);
   }, 'image/png');
 }
@@ -1170,40 +1176,67 @@ function adjustZoom(delta) {
 // ---------- ponte Laudo-Guard (extensão) ----------
 // A extensão injeta content_radiogrid_bridge.js nesta página e responde a
 // REQUEST_RIS_CONTEXT com o paciente do RIS ativo (WebRIS etc.).
-function pedirContextoLaudoGuard() {
+// manual=true → pedido do botão (queremos confirmação por toast mesmo sem troca).
+function pedirContextoLaudoGuard(manual) {
+  if (manual) manualPullUntil = Date.now() + 2500;
   window.postMessage({ source: 'radiogrid', type: 'REQUEST_RIS_CONTEXT' }, '*');
 }
 
-function atualizarContextoUI(conectado) {
-  const st = $('lg-status');
+// Uma edição já foi iniciada? (imagens no editor/comparativo ou painéis gerados)
+function edicaoIniciada() {
+  return images.length > 0 || cmp.left.length > 0 || cmp.right.length > 0 || panels.length > 0;
+}
+
+// warn=true → estado âmbar "confira" (padrão do badge Laudite) após troca no meio da edição.
+function atualizarContextoUI(conectado, warn) {
+  const st = $('lg-status'), card = $('lg-card');
+  card.classList.toggle('warn', conectado && !!warn);
   if (conectado) {
-    st.textContent = '● conectado' + (risFonte ? ' · ' + risFonte.toUpperCase() : '');
-    st.className = 'lg-status on';
+    if (warn) { st.textContent = '⚠ paciente mudou — confira'; st.className = 'lg-status warn'; }
+    else { st.textContent = '● conectado' + (risFonte ? ' · ' + risFonte.toUpperCase() : ''); st.className = 'lg-status on'; }
     $('lg-data').hidden = false;
     $('lg-nome').textContent = risPaciente || '—';
     $('lg-id').textContent = risIdPaciente || '—';
     $('lg-exame').textContent = risExame || '—';
   } else {
-    st.textContent = '● aguardando';
-    st.className = 'lg-status off';
+    st.textContent = '● aguardando'; st.className = 'lg-status off';
     $('lg-data').hidden = true;
   }
+}
+
+// Limpa o aviso âmbar quando o usuário age (gera painel / limpa editor).
+function limparAvisoContexto() {
+  if (ultimoCtxKey !== null && $('lg-status').classList.contains('warn')) atualizarContextoUI(true);
 }
 
 window.addEventListener('message', (ev) => {
   if (ev.source !== window) return;
   const m = ev.data;
   if (!m || m.source !== 'laudoguard-ext' || m.type !== 'RIS_CONTEXT') return;
+  const manual = Date.now() < manualPullUntil; manualPullUntil = 0;
   const p = m.payload;
   if (p && (p.idPaciente || p.paciente || p.exame)) {
+    const novoKey = (p.idPaciente || '') + '|' + (p.exame || '');
+    const primeiro = ultimoCtxKey === null;
+    const mudou = !primeiro && novoKey !== ultimoCtxKey;
     risPaciente = p.paciente || '';
     risIdPaciente = p.idPaciente || '';
     risExame = p.exame || '';
     risFonte = p.fonte || '';
-    atualizarContextoUI(true);
-    toast('green', '✓ Contexto recebido', `${risPaciente || risIdPaciente || 'paciente'} · ${(risFonte || 'RIS').toUpperCase()}`);
-  } else {
-    atualizarContextoUI(false);
+    ultimoCtxKey = novoKey;
+    if (mudou && edicaoIniciada()) {
+      // Trocou o paciente/exame no meio de uma edição já iniciada → alerta âmbar + toast.
+      atualizarContextoUI(true, true);
+      toast('yellow', '⚠️ Paciente do laudo mudou',
+        `Agora: ${risPaciente || risIdPaciente || 'paciente'}${risExame ? ' · ' + risExame : ''} — confira antes de gerar`);
+    } else {
+      atualizarContextoUI(true);
+      // Confirmação só no pedido manual (o auto-update repinta em silêncio, como o badge Laudite).
+      if (manual) toast('green', '✓ Contexto atualizado',
+        `${risPaciente || risIdPaciente || 'paciente'} · ${(risFonte || 'RIS').toUpperCase()}`);
+    }
+  } else if (manual) {
+    // Só reage ao vazio quando foi pedido manual; poll com nada aberto fica silencioso.
     toast('yellow', 'Nenhum RIS ativo', 'Abra um exame no RIS (ex.: WebRIS) e tente de novo');
   }
 });
@@ -1300,7 +1333,10 @@ function lgLoadPrefs() {
   [...$('lg-legenda-pos').querySelectorAll('button')].forEach(b =>
     b.addEventListener('click', () => { legendaPos = b.dataset.pos; atualizarLegendaPosUI(); lgSavePrefs(); }));
   atualizarContextoUI(false);
-  pedirContextoLaudoGuard();
+  pedirContextoLaudoGuard(false);
+  // Auto-update: além do push proativo do background (ao focar o RIS), faz um
+  // polling leve p/ pegar troca de paciente/exame dentro da mesma aba (SPA).
+  setInterval(() => pedirContextoLaudoGuard(false), 4000);
 })();
 </script>
 </body>
