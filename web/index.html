@@ -1101,6 +1101,7 @@ function emitPanel(canvas, kind, restore) {
     panels.unshift({ id: nextId++, name, number, url, file, restore, at: new Date() });
     renderPanels();
     limparAvisoContexto();
+    avisarPainelGerado();
     toast('green', '✓ Imagem gerada', `${name} · #${number} — veja na galeria abaixo`);
   }, 'image/png');
 }
@@ -1516,6 +1517,23 @@ function atualizarContextoUI(conectado, warn) {
   // O texto da legenda geral mudou → marcador e prévia acompanham.
   atualizarMarcadorGeral();
   agendarPreview();
+}
+
+// Avisa a extensão de que existe um painel gerado para este paciente. Serve para
+// a conferência do Web RIS distinguir "esqueceu de fazer a imagem" de "fez e
+// esqueceu de colar" — que é o caso comum. Vai só o identificador do contexto
+// que a própria extensão mandou pra cá; a imagem não sai da página.
+//
+// Sem contexto puxado do Laudo-Guard não há o que cruzar, então não manda nada.
+function avisarPainelGerado() {
+  if (!risIdPaciente) return;
+  try {
+    window.postMessage({
+      source: 'radiogrid',
+      type: 'PANEL_GERADO',
+      payload: { idPaciente: risIdPaciente, exame: risExame || '' },
+    }, '*');
+  } catch (_) {}
 }
 
 // Limpa o aviso âmbar quando o usuário age (gera painel / limpa editor).
