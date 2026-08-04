@@ -75,9 +75,8 @@ axial`, `Fig. 1 — lesão frontal`); texto longo demais é truncado com `…`.
 - Ao completar a 4ª imagem o painel é gerado sozinho (fluxo rápido de sempre) —
   clique em **"Reabrir"** na galeria para digitar as legendas e gerar de novo;
   as imagens-fonte, o enquadramento e as legendas já digitadas voltam intactos.
-- Se a legenda global (abaixo) estiver como *overlay na base*, ela é pintada no
-  rodapé do painel e cobre a faixa das imagens de baixo — a interface avisa e
-  sugere *"faixa extra abaixo"*.
+- A legenda geral (abaixo) nunca colide com estas: nos dois modos ela fica
+  **abaixo das imagens**, e o que muda é quem cede o espaço.
 
 ### Previsão de onde as legendas vão cair
 
@@ -88,9 +87,8 @@ Antes de gerar, o editor mostra onde cada legenda vai parar no PNG:
   junto com o formato exportado e com o layout 1×2/2×1). Com texto ela aparece
   cheia, com o próprio texto; vazia, vira só uma hachura tênue marcando o lugar.
 - **Marcador da legenda geral** — mostra a faixa do paciente logo abaixo da
-  grade quando ela é *"faixa extra abaixo"*, ou **em âmbar por cima da base das
-  imagens** quando é *"overlay na base"*, deixando visível que nesse modo ela
-  cobre a legenda das imagens de baixo.
+  grade, dizendo quem paga a conta em cada modo: *"na base"* (as imagens cedem
+  30 px) ou *"faixa extra abaixo"* (o PNG cresce 30 px).
 - **Prévia da saída** — ao lado do editor, o PNG que vai sair, composto pelo
   mesmo caminho do botão "Gerar" e apenas reduzido, com o tamanho real anunciado
   (ex.: `640×500`). É a previsão fiel: mostra recorte, ordem, as faixas por
@@ -110,8 +108,14 @@ isso:
 - o **nome do arquivo** exportado sai como `ID_EXAME` (e `NOME_ID_EXAME` se o
   checkbox *"Incluir nome do paciente no arquivo"* estiver ligado);
 - opcionalmente, o checkbox *"Imprimir legenda"* escreve `ID · Exame` (e o nome,
-  se ligado) na imagem gerada — como **overlay na base** (mantém 640×500) ou como
-  **faixa extra abaixo**.
+  se ligado) na imagem gerada, em duas posições possíveis:
+  - **"na base"** — a faixa é **reservada dentro do painel**: o PNG mantém o
+    tamanho do formato (640×500 no WebRIS) e as imagens cedem 30 px de altura;
+  - **"faixa extra abaixo"** — a faixa é acrescentada embaixo: as imagens ficam
+    em tamanho cheio e o PNG cresce 30 px (640×530).
+
+  Nos dois casos ela é desenhada **abaixo** das imagens, então nunca cobre a
+  legenda por imagem das células de baixo.
 
 Ambos os checkboxes nascem **desligados** (privacidade) e a preferência é lembrada
 no navegador. Sem a extensão, o campo de nome manual continua funcionando como
