@@ -60,6 +60,25 @@ O workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml) publica
 a pasta `web/` automaticamente — basta habilitar uma vez em
 **Settings → Pages → Source = "GitHub Actions"**.
 
+### Legenda por imagem
+
+Cada imagem carregada tem um campo **"Legenda (opcional)"** logo abaixo do seu
+tile, nos dois modos (Painel e Comparativo). Quando preenchido, o PNG gerado
+desenha uma **faixa sólida sob aquela imagem** com o texto (ex.: `T2 FLAIR
+axial`, `Fig. 1 — lesão frontal`); texto longo demais é truncado com `…`.
+
+- O texto é **digitado** — não vem do Laudo-Guard, então nunca carrega dado de
+  paciente por acidente. Como todo o resto da versão web, some ao fechar a aba.
+- A faixa é **descontada da altura da célula**, nunca somada ao painel: o canvas
+  final continua no tamanho do formato escolhido (o WebRIS-safe segue 640×500).
+- Campo vazio = nenhuma faixa, layout idêntico ao de antes.
+- Ao completar a 4ª imagem o painel é gerado sozinho (fluxo rápido de sempre) —
+  clique em **"Reabrir"** na galeria para digitar as legendas e gerar de novo;
+  as imagens-fonte, o enquadramento e as legendas já digitadas voltam intactos.
+- Se a legenda global (abaixo) estiver como *overlay na base*, ela é pintada no
+  rodapé do painel e cobre a faixa das imagens de baixo — a interface avisa e
+  sugere *"faixa extra abaixo"*.
+
 ### Integração com o Laudo-Guard
 
 O RadioGrid não guarda dados de paciente. Quando a extensão **Laudo-Guard** está

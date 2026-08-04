@@ -186,6 +186,19 @@
   .layout-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .editor-actions { display: flex; gap: 8px; }
   .hint { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 10px; }
+  .hint.warn { color: var(--yellow); }
+
+  /* ---------- Legenda por imagem (campo sob cada tile) ---------- */
+  /* O tile é quem arrasta; o input fica FORA dele, no wrapper, para digitar
+     não iniciar o drag e o foco não brigar com o overflow:hidden do tile. */
+  .tile-wrap { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .cap-input {
+    width: 100%; box-sizing: border-box; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 5px; color: var(--text);
+    font-family: var(--mono); font-size: 11px; text-align: center; padding: 4px 6px;
+  }
+  .cap-input::placeholder { color: var(--text-dim); }
+  .cap-input:focus { outline: none; border-color: var(--accent); }
 
   /* ---------- Panels gallery ---------- */
   .panels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
@@ -291,6 +304,10 @@
             <button type="button" data-pos="strip">Faixa extra abaixo</button>
           </div>
         </div>
+        <div class="hint warn" id="lg-legenda-conflito" hidden>
+          ⚠️ Há legendas por imagem preenchidas — prefira “Faixa extra abaixo”: o overlay
+          é pintado no rodapé do painel e cobre a legenda das imagens de baixo.
+        </div>
       </div>
     </div>
 
@@ -354,7 +371,7 @@
           <button class="primary" id="gen-btn" onclick="generatePanel()" disabled>Gerar painel (0/4)</button>
           <button class="danger" id="clear-btn" onclick="clearEditor()" disabled>Limpar</button>
         </div>
-        <div class="hint" id="panel-hint">Tamanho conforme o “Formato exportado” acima · 1 → própria proporção · 2 → 1×2/2×1 (Cortar/Encaixar) · 3–4 → grade 2×2 · “Ajustar” no tile abre girar/pan/zoom</div>
+        <div class="hint" id="panel-hint">Tamanho conforme o “Formato exportado” acima · 1 → própria proporção · 2 → 1×2/2×1 (Cortar/Encaixar) · 3–4 → grade 2×2 · “Ajustar” no tile abre girar/pan/zoom · o campo sob cada imagem vira uma faixa com o texto (vazio = sem faixa) · na 4ª imagem o painel sai sozinho — use “Reabrir” para digitar as legendas e gerar de novo</div>
       </div>
     </div>
 
@@ -393,7 +410,7 @@
           <button class="primary" id="cmp-gen-btn" onclick="generateCompare()" disabled>Gerar comparativo</button>
           <button class="danger" id="cmp-clear-btn" onclick="clearCompare()" disabled>Limpar</button>
         </div>
-        <div class="hint">A data de cada lado vira legenda no topo da coluna · saída no “Formato exportado” acima (PNG)</div>
+        <div class="hint">A data de cada lado vira legenda no topo da coluna · o campo sob cada imagem vira uma faixa com o texto · saída no “Formato exportado” acima (PNG)</div>
       </div>
     </div>
   </section>
@@ -437,7 +454,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.13.0';  // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.14.0';  // marcador de versão exibido no cabeçalho
 
 // Contexto de paciente recebido do Laudo-Guard (extensão) via postMessage.
 let risPaciente = '', risIdPaciente = '', risExame = '', risFonte = '';
@@ -513,7 +530,7 @@ async function addFiles(fileList) {
     if (images.length >= 4) { skipped++; continue; }
     const el = await loadImage(f);
     if (!el) { skipped++; continue; }
-    images.push({ id: nextId++, name: f.name, el, tf: defaultTf() });
+    images.push({ id: nextId++, name: f.name, el, tf: defaultTf(), cap: '' });
     added++;
   }
   renderEditor();
@@ -529,6 +546,8 @@ function renderEditor() {
   tiles.innerHTML = '';
   for (let i = 0; i < 4; i++) {
     const img = images[i];
+    const wrap = document.createElement('div');
+    wrap.className = 'tile-wrap';
     const tile = document.createElement('div');
     if (img) {
       tile.className = 'tile filled';
@@ -540,7 +559,7 @@ function renderEditor() {
       const thumb = tileThumb(img);
       // 1 imagem → própria proporção com girar/pan/zoom; 2+ → célula com pan/zoom/girar.
       const openIt = () => {
-        if (images.length >= 2) { const c = panelCell(); openAdjust(img, { aspect: c.aspect, fit: c.fit }); }
+        if (images.length >= 2) { const c = panelCell(img); openAdjust(img, { aspect: c.aspect, fit: c.fit }); }
         else openAdjust(img, { single: true });
       };
       thumb.onclick = openIt;
@@ -549,12 +568,15 @@ function renderEditor() {
       adjb.title = 'Ajustar enquadramento (girar/pan/zoom)';
       adjb.onclick = (e) => { e.stopPropagation(); openIt(); };
       tile.appendChild(thumb); tile.appendChild(pos); tile.appendChild(adjb); tile.appendChild(rm);
+      wrap.appendChild(tile);
+      wrap.appendChild(capInput(img));
     } else {
       tile.className = 'tile';
       const plus = document.createElement('span'); plus.className = 'plus'; plus.textContent = '+';
       tile.appendChild(plus);
+      wrap.appendChild(tile);
     }
-    tiles.appendChild(tile);
+    tiles.appendChild(wrap);
   }
   bindReorder();
 
@@ -565,6 +587,7 @@ function renderEditor() {
   $('gen-btn').textContent = `Gerar painel (${n}/4)`;
   $('gen-btn').disabled = n === 0;
   $('clear-btn').disabled = n === 0;
+  atualizarDicaLegendaGlobal();
 }
 
 function removeImage(id) {
@@ -602,6 +625,39 @@ function bindReorder() {
   });
 }
 
+// ---------- legenda por imagem ----------
+// Texto livre digitado pelo usuário para UMA imagem (vazio = sem faixa).
+// Fica só na sessão, como as próprias imagens — nada é persistido.
+function capTexto(im) { return ((im && im.cap) || '').trim(); }
+
+// Altura da faixa sob a célula, no formato ativo (webris/square → 22, sharp2x → 44).
+// Mesmo idioma do capH() do comparativo: escala com o formato, não com a célula.
+function capTileH() { return Math.round(22 * EXPORT_FORMATS[exportFormat].scale); }
+
+// Campo de legenda que acompanha um tile. Fica FORA do .tile (no .tile-wrap):
+// o tile é quem arrasta, então digitar aqui não inicia o drag.
+// Só escreve em im.cap — re-renderizar a cada tecla perderia o foco, já que
+// renderEditor()/renderCompare() recriam os tiles do zero.
+function capInput(im) {
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.className = 'cap-input';
+  inp.maxLength = 60;
+  inp.placeholder = 'Legenda (opcional)';
+  inp.title = 'Texto impresso numa faixa sob esta imagem (ex.: "T2 FLAIR axial")';
+  inp.value = im.cap || '';
+  inp.addEventListener('input', () => { im.cap = inp.value; atualizarDicaLegendaGlobal(); });
+  // O wrapper não arrasta, mas o tile irmão sim — isola o campo por garantia.
+  inp.addEventListener('dragstart', (e) => e.stopPropagation());
+  inp.addEventListener('mousedown', (e) => e.stopPropagation());
+  return inp;
+}
+
+// Alguma imagem em edição (painel ou comparativo) tem legenda preenchida?
+function temLegendaPorImagem() {
+  return [...images, ...cmp.left, ...cmp.right].some(im => capTexto(im));
+}
+
 // ---------- composição (Canvas) ----------
 // Desenha a imagem numa célula aplicando o enquadramento (pan/zoom) de im.tf.
 //   fit 'cover'   → preenche a célula (escala = max), recorta o excesso.
@@ -632,6 +688,35 @@ function drawCell(ctx, im, x, y, w, h, fit) {
   ctx.restore();
 }
 
+// Desenha a célula RESERVANDO uma faixa sólida embaixo para a legenda daquela
+// imagem. A faixa é descontada da altura recebida — nunca somada — para o canvas
+// final continuar no tamanho do formato (WebRIS-safe 640×500).
+// Sem legenda, cai direto no drawCell() e o resultado é idêntico ao de antes.
+function drawCellCap(ctx, im, x, y, w, h, fit) {
+  const txt = capTexto(im);
+  if (!txt) { drawCell(ctx, im, x, y, w, h, fit); return; }
+  const bh = Math.min(capTileH(), Math.floor(h / 2));   // nunca engole a célula
+  drawCell(ctx, im, x, y, w, h - bh, fit);
+  desenharFaixaTile(ctx, x, y + h - bh, w, bh, txt);
+}
+
+// Faixa sólida da legenda de uma imagem — mesmo visual do cabeçalho de coluna
+// do comparativo (fundo sólido + filete), texto centralizado e truncado.
+function desenharFaixaTile(ctx, x, y, w, h, txt) {
+  const scale = EXPORT_FORMATS[exportFormat].scale;
+  ctx.save();
+  ctx.fillStyle = '#161B22';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#30363D';
+  ctx.fillRect(x, y, w, Math.max(1, Math.round(scale)));   // filete superior
+  ctx.fillStyle = '#E6EDF3';
+  ctx.font = `600 ${Math.round(12 * scale)}px Inter, system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(truncarTexto(ctx, txt, w - 12 * scale), x + w / 2, y + h / 2);
+  ctx.restore();
+}
+
 function imgDim(im) {
   return { w: im.el.naturalWidth || im.el.width || 1, h: im.el.naturalHeight || im.el.height || 1 };
 }
@@ -653,14 +738,17 @@ function composeSingle(im) {
   const rad = ((im.tf && im.tf.rot) || 0) * Math.PI / 180;
   const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
   const ew = w * ac + h * as, eh = w * as + h * ac;
-  const s = Math.min(PANEL_W / ew, PANEL_H / eh);
+  // Com legenda, a faixa é reservada ANTES de escalar: imagem + faixa juntas
+  // continuam cabendo em PANEL_W × PANEL_H.
+  const bh = capTexto(im) ? capTileH() : 0;
+  const s = Math.min(PANEL_W / ew, (PANEL_H - bh) / eh);
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(ew * s));
-  canvas.height = Math.max(1, Math.round(eh * s));
+  canvas.height = Math.max(1, Math.round(eh * s)) + bh;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   // Mesmo caminho da célula (aplica zoom/pan de im.tf); com zoom=1 preenche igual.
-  drawCell(ctx, im, 0, 0, canvas.width, canvas.height, 'contain');
+  drawCellCap(ctx, im, 0, 0, canvas.width, canvas.height, 'contain');
   return canvas;
 }
 
@@ -677,7 +765,7 @@ function composeStrip(imgs, orientation, fit) {
   const cells = orientation === 'row'
     ? [[0, 0, halfW, PANEL_H], [halfW, 0, halfW, PANEL_H]]   // 640×840 cada
     : [[0, 0, PANEL_W, halfH], [0, halfH, PANEL_W, halfH]];  // 1280×420 cada
-  imgs.slice(0, 2).forEach((im, i) => drawCell(ctx, im, ...cells[i], fit));
+  imgs.slice(0, 2).forEach((im, i) => drawCellCap(ctx, im, ...cells[i], fit));
   return canvas;
 }
 
@@ -745,7 +833,7 @@ function composeAdaptive(imgs) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   for (let i = 0; i < n; i++) {
-    drawCell(ctx, imgs[i], (i % 2) * cw, Math.floor(i / 2) * ch, cw, ch, 'contain');
+    drawCellCap(ctx, imgs[i], (i % 2) * cw, Math.floor(i / 2) * ch, cw, ch, 'contain');
   }
   return canvas;
 }
@@ -778,7 +866,7 @@ function composeCompare(left, right, leftLabel, rightLabel) {
     ctx.fillText(c.label, c.x + colW / 2, CAP / 2, colW - 12);
     // imagens da coluna
     c.imgs.slice(0, rows).forEach((img, r) => {
-      drawCell(ctx, img, c.x, CAP + r * tileH, colW, tileH, 'contain');
+      drawCellCap(ctx, img, c.x, CAP + r * tileH, colW, tileH, 'contain');
     });
   }
   // linha divisória sutil entre as colunas
@@ -947,7 +1035,7 @@ async function addCompareFiles(side, fileList) {
     if (list.length >= 2) { skipped++; continue; }
     const el = await loadImage(f);
     if (!el) { skipped++; continue; }
-    list.push({ id: nextId++, name: f.name, el, tf: defaultTf() });
+    list.push({ id: nextId++, name: f.name, el, tf: defaultTf(), cap: '' });
     added++;
   }
   renderCompare();
@@ -958,19 +1046,23 @@ function renderCompareColumn(side) {
   const tiles = $(side === 'left' ? 'cmp-left-tiles' : 'cmp-right-tiles');
   tiles.innerHTML = '';
   cmp[side].forEach((img) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'tile-wrap';
     const tile = document.createElement('div');
     tile.className = 'tile filled';
     const rm = document.createElement('button');
     rm.className = 'remove'; rm.textContent = '×';
     rm.onclick = (e) => { e.stopPropagation(); cmp[side] = cmp[side].filter(x => x.id !== img.id); renderCompare(); };
     const thumb = tileThumb(img);
-    const openIt = () => { const c = compareCell(); openAdjust(img, { aspect: c.aspect, fit: c.fit }); };
+    const openIt = () => { const c = compareCell(img); openAdjust(img, { aspect: c.aspect, fit: c.fit }); };
     thumb.onclick = openIt;
     const adjb = document.createElement('button'); adjb.className = 'adjust-btn'; adjb.textContent = 'Ajustar';
     adjb.title = 'Ajustar enquadramento (girar/pan/zoom)';
     adjb.onclick = (e) => { e.stopPropagation(); openIt(); };
     tile.appendChild(thumb); tile.appendChild(adjb); tile.appendChild(rm);
-    tiles.appendChild(tile);
+    wrap.appendChild(tile);
+    wrap.appendChild(capInput(img));
+    tiles.appendChild(wrap);
   });
 }
 function renderCompare() {
@@ -980,6 +1072,7 @@ function renderCompare() {
   $('cmp-gen-btn').disabled = total === 0;
   $('cmp-clear-btn').disabled = total === 0;
   updateLoadedStat();
+  atualizarDicaLegendaGlobal();
 }
 function clearCompare() {
   cmp = { left: [], right: [] };
@@ -1050,15 +1143,22 @@ function tileThumb(im) {
 }
 
 // Proporção (w/h) e fit da célula de cada contexto, para o overlay ser fiel.
-function panelCell() {
+// `im` é a imagem clicada: com legenda, a área útil perde a altura da faixa.
+function panelCell(im) {
+  const bh = capTexto(im) ? capTileH() : 0;
   const n = images.length;
-  if (n === 2) { const o = resolveLayout(images); return { aspect: o === 'row' ? stripRowAR() : stripColAR(), fit: fitMode }; }
-  return { aspect: (PANEL_W / 2) / (PANEL_H / 2), fit: 'contain' }; // 2×2 → 640/560
+  if (n === 2) {
+    const o = resolveLayout(images);
+    const [w, h] = o === 'row' ? [PANEL_W / 2, PANEL_H] : [PANEL_W, PANEL_H / 2];
+    return { aspect: w / (h - bh), fit: fitMode };
+  }
+  return { aspect: (PANEL_W / 2) / (PANEL_H / 2 - bh), fit: 'contain' }; // 2×2 → 640/560
 }
-function compareCell() {
+function compareCell(im) {
+  const bh = capTexto(im) ? capTileH() : 0;
   const rows = Math.max(cmp.left.length, cmp.right.length, 1);
   const tileH = Math.floor((PANEL_H - capH()) / rows);
-  return { aspect: (PANEL_W / 2) / tileH, fit: 'contain' };
+  return { aspect: (PANEL_W / 2) / (tileH - bh), fit: 'contain' };
 }
 
 let adj = null; // { im, fit, aspect, single }
@@ -1247,6 +1347,14 @@ function textoLegenda(comNome) {
     .filter(Boolean).join('  ·  ');
 }
 
+// Encurta o texto com "…" até caber em maxW, na fonte já setada no ctx.
+function truncarTexto(ctx, txt, maxW) {
+  let s = txt;
+  if (ctx.measureText(s).width <= maxW) return s;
+  while (s.length > 4 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+  return s + '…';
+}
+
 // Desenha a faixa (fundo + barra accent + texto truncado) em (x,y,w,h).
 function desenharFaixaLegenda(ctx, x, y, w, h, txt) {
   const fontPx = Math.round(w * 13 / 640);
@@ -1258,13 +1366,9 @@ function desenharFaixaLegenda(ctx, x, y, w, h, txt) {
   ctx.fillRect(x, y, Math.max(2, Math.round(w * 3 / 640)), h);
   ctx.fillStyle = '#E6EDF3';
   ctx.font = fontPx + "px ui-monospace, 'JetBrains Mono', monospace";
+  ctx.textAlign = 'left';   // o canvas pode chegar com 'center' do comparativo
   ctx.textBaseline = 'middle';
-  let s = txt;
-  const maxW = w - pad * 2;
-  if (ctx.measureText(s).width > maxW) {
-    while (s.length > 4 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
-    s += '…';
-  }
+  const s = truncarTexto(ctx, txt, w - pad * 2);
   ctx.fillText(s, x + pad, y + h / 2 + Math.round(fontPx * 0.08));
   ctx.restore();
 }
@@ -1300,6 +1404,12 @@ function atualizarLegendaPosUI() {
 function atualizarLegendaPosDisponivel() {
   $('lg-legenda-pos-row').classList.toggle('disabled', !$('lg-legenda').checked);
 }
+// A legenda global em 'overlay' é pintada no rodapé do painel — exatamente onde
+// ficam as faixas das imagens de baixo. Avisa em vez de bloquear.
+function atualizarDicaLegendaGlobal() {
+  $('lg-legenda-conflito').hidden =
+    !($('lg-legenda').checked && legendaPos === 'overlay' && temLegendaPorImagem());
+}
 function lgSavePrefs() {
   try {
     localStorage.setItem('rg_incluir_nome', $('lg-incluir-nome').checked ? '1' : '0');
@@ -1315,6 +1425,7 @@ function lgLoadPrefs() {
   } catch (_) {}
   atualizarLegendaPosUI();
   atualizarLegendaPosDisponivel();
+  atualizarDicaLegendaGlobal();
 }
 
 // ---------- init ----------
@@ -1329,9 +1440,13 @@ function lgLoadPrefs() {
   // Contexto do Laudo-Guard: preferências + eventos + pedido inicial.
   lgLoadPrefs();
   $('lg-incluir-nome').addEventListener('change', lgSavePrefs);
-  $('lg-legenda').addEventListener('change', () => { lgSavePrefs(); atualizarLegendaPosDisponivel(); });
+  $('lg-legenda').addEventListener('change', () => {
+    lgSavePrefs(); atualizarLegendaPosDisponivel(); atualizarDicaLegendaGlobal();
+  });
   [...$('lg-legenda-pos').querySelectorAll('button')].forEach(b =>
-    b.addEventListener('click', () => { legendaPos = b.dataset.pos; atualizarLegendaPosUI(); lgSavePrefs(); }));
+    b.addEventListener('click', () => {
+      legendaPos = b.dataset.pos; atualizarLegendaPosUI(); lgSavePrefs(); atualizarDicaLegendaGlobal();
+    }));
   atualizarContextoUI(false);
   pedirContextoLaudoGuard(false);
   // Auto-update: além do push proativo do background (ao focar o RIS), faz um
