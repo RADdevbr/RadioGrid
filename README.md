@@ -95,6 +95,9 @@ Antes de gerar, o editor mostra onde cada legenda vai parar no PNG:
   mesmo caminho do botão "Gerar" e apenas reduzido, com o tamanho real anunciado
   (ex.: `640×500`). É a previsão fiel: mostra recorte, ordem, as faixas por
   imagem e a faixa geral de uma vez, e acompanha o que você digita.
+  Ela usa todo o espaço livre ao lado do editor (~570 px numa tela cheia) e,
+  quando a janela é estreita demais, desce para a linha de baixo e cresce até o
+  **1:1 com o PNG** — nunca é ampliada além disso, para não borrar.
 
 ### Integração com o Laudo-Guard
 

@@ -238,7 +238,13 @@
 
   /* ---------- Prévia da saída ---------- */
   .editor-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
-  .prev-box { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  /* A prévia cresce com o espaço livre ao lado do editor; quando sobra menos que
+     a base, quebra para a linha de baixo e aí usa a largura toda (até o 1:1 do
+     PNG — o teto de 680px cobre os 640 nativos + o padding da caixa). */
+  .prev-box {
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+    flex: 1 1 420px; min-width: 0; max-width: 680px;
+  }
   .prev-box .prev-lbl {
     display: flex; justify-content: space-between; gap: 16px; margin-bottom: 8px;
     font-family: var(--mono); font-size: 11px; color: var(--text-dim);
@@ -518,7 +524,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.15.0';  // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.15.1';  // marcador de versão exibido no cabeçalho
 
 // Contexto de paciente recebido do Laudo-Guard (extensão) via postMessage.
 let risPaciente = '', risIdPaciente = '', risExame = '', risFonte = '';
@@ -797,6 +803,14 @@ function rotulosCompare() {
   return [$('cmp-left-date').value.trim() || 'Anterior', $('cmp-right-date').value.trim() || 'Atual'];
 }
 
+// Largura em que a prévia é desenhada: o espaço que a caixa tem (ela cresce com
+// a janela), limitado ao tamanho real do PNG — ampliar além do 1:1 só borraria.
+function larguraPreview(box, larguraReal) {
+  const cs = getComputedStyle(box);
+  const util = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  return Math.max(160, Math.min(Math.floor(util) || 160, larguraReal));
+}
+
 // Compõe o PNG pelo MESMO caminho do "Gerar" e desenha reduzido: o que aparece
 // aqui é exatamente o que sai, com recorte, ordem e as duas legendas no lugar.
 function renderPreview() {
@@ -814,8 +828,7 @@ function renderPreview() {
   const clamped = EXPORT_FORMATS[exportFormat].clamp ? fitForWebRIS(src) : src;
   const out = aplicarLegenda(clamped, $('lg-incluir-nome').checked);
 
-  const PREV_W = 320;
-  const s = Math.min(1, PREV_W / out.width);
+  const s = larguraPreview(box, out.width) / out.width;
   const cv = $(compare ? 'prev-compare-canvas' : 'prev-panel-canvas');
   cv.width = Math.max(1, Math.round(out.width * s));
   cv.height = Math.max(1, Math.round(out.height * s));
@@ -1656,6 +1669,8 @@ function lgLoadPrefs() {
   // As datas do comparativo viram título de coluna no PNG → prévia acompanha.
   ['cmp-left-date', 'cmp-right-date'].forEach(id =>
     $(id).addEventListener('input', agendarPreview));
+  // A prévia é desenhada na largura que a caixa tem → redesenha ao redimensionar.
+  window.addEventListener('resize', agendarPreview);
   atualizarContextoUI(false);
   pedirContextoLaudoGuard(false);
   // Auto-update: além do push proativo do background (ao focar o RIS), faz um
