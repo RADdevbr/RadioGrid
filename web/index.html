@@ -186,7 +186,6 @@
   .layout-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .editor-actions { display: flex; gap: 8px; }
   .hint { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 10px; }
-  .hint.warn { color: var(--yellow); }
 
   /* ---------- Legenda por imagem (campo sob cada tile) ---------- */
   /* O tile é quem arrasta; o input fica FORA dele, no wrapper, para digitar
@@ -230,11 +229,6 @@
   .lg-marcador[hidden] { display: none; }   /* o display:flex acima venceria o [hidden] */
   .lg-marcador b { color: var(--text); font-weight: 600; }
   .lg-marcador .tag { color: var(--accent); font-size: 9px; letter-spacing: .5px; }
-  .lg-marcador.overlay {
-    position: absolute; left: 0; right: 0; margin: 0; z-index: 6; pointer-events: none;
-    border-radius: 0 0 4px 4px; border-color: var(--yellow); background: rgba(13,17,23,.94);
-  }
-  .lg-marcador.overlay .tag { color: var(--yellow); }
 
   /* ---------- Prévia da saída ---------- */
   .editor-row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
@@ -352,13 +346,9 @@
         <div class="lg-pos" id="lg-legenda-pos-row">
           <span class="lg-k">Posição da legenda</span>
           <div class="mode-switch sm" id="lg-legenda-pos">
-            <button type="button" data-pos="overlay" class="active">Overlay na base</button>
-            <button type="button" data-pos="strip">Faixa extra abaixo</button>
+            <button type="button" data-pos="overlay" class="active" title="A faixa é reservada dentro do painel: o PNG mantém o tamanho do formato (ex.: 640×500) e as imagens cedem 30px de altura. Recomendado para o WebRIS.">Na base</button>
+            <button type="button" data-pos="strip" title="A faixa é acrescentada abaixo: as imagens ficam em tamanho cheio e o PNG cresce 30px (ex.: 640×530).">Faixa extra abaixo</button>
           </div>
-        </div>
-        <div class="hint warn" id="lg-legenda-conflito" hidden>
-          ⚠️ Há legendas por imagem preenchidas — prefira “Faixa extra abaixo”: o overlay
-          é pintado no rodapé do painel e cobre a legenda das imagens de baixo.
         </div>
       </div>
     </div>
@@ -524,7 +514,7 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = 'v3.15.1';  // marcador de versão exibido no cabeçalho
+const APP_VERSION = 'v3.16.0';  // marcador de versão exibido no cabeçalho
 
 // Contexto de paciente recebido do Laudo-Guard (extensão) via postMessage.
 let risPaciente = '', risIdPaciente = '', risExame = '', risFonte = '';
@@ -658,7 +648,6 @@ function renderEditor() {
   $('gen-btn').textContent = `Gerar painel (${n}/4)`;
   $('gen-btn').disabled = n === 0;
   $('clear-btn').disabled = n === 0;
-  atualizarDicaLegendaGlobal();
   atualizarMarcadorGeral();
   agendarPreview();
 }
@@ -724,7 +713,6 @@ function capInput(im) {
     // Atualiza a faixa fantasma do próprio tile em vez de re-renderizar (foco).
     const g = inp.parentNode.querySelector('.ghost');
     if (g) { g.textContent = capTexto(im); g.classList.toggle('vazio', !capTexto(im)); }
-    atualizarDicaLegendaGlobal();
     agendarPreview();
   });
   // O wrapper não arrasta, mas o tile irmão sim — isola o campo por garantia.
@@ -733,10 +721,25 @@ function capInput(im) {
   return inp;
 }
 
-// Alguma imagem em edição (painel ou comparativo) tem legenda preenchida?
-function temLegendaPorImagem() {
-  return [...images, ...cmp.left, ...cmp.right].some(im => capTexto(im));
+// ---------- espaço da legenda geral (a do paciente) ----------
+// Altura da faixa, proporcional à largura — assim ela acompanha qualquer
+// reescala uniforme do canvas (o clamp do 'sharp2x', por exemplo).
+function barraGeralH(w) { return Math.round(w * 30 / 640); }
+
+function legendaGeralAtiva() {
+  return $('lg-legenda').checked && !!textoLegenda($('lg-incluir-nome').checked);
 }
+
+// No modo 'na base' a faixa geral é impressa DENTRO do painel. Ela é reservada
+// antes da composição: sem isso cairia exatamente sobre as legendas das imagens
+// de baixo (as duas ficam coladas na base do canvas) e os textos se atropelavam.
+// No modo 'faixa extra abaixo' não há reserva — lá o PNG é que cresce.
+function reservaLegendaGeral(largura) {
+  return legendaGeralAtiva() && legendaPos === 'overlay' ? barraGeralH(largura) : 0;
+}
+
+// Altura disponível para as imagens no formato ativo, já descontada a reserva.
+function alturaUtil() { return PANEL_H - reservaLegendaGeral(PANEL_W); }
 
 // ---------- marcadores de previsão ----------
 // Faixa fantasma dentro do tile: marca ONDE a legenda vai cair, ocupando a mesma
@@ -763,10 +766,9 @@ function aplicarGhost(tile, im, celula) {
   tile.appendChild(el);
 }
 
-// Marcador da legenda geral (a do paciente), nos dois modos:
-//   'strip'   → faixa tracejada logo abaixo da grade — ela CRESCE o PNG;
-//   'overlay' → faixa âmbar por cima do rodapé da grade — ela COBRE as legendas
-//               das imagens de baixo, que é justamente o que precisa ficar visível.
+// Marcador da legenda geral (a do paciente), nos dois modos. Nos dois casos ela
+// fica ABAIXO das imagens; o que muda é quem paga a conta — em 'na base' as
+// imagens cedem a altura, em 'faixa extra abaixo' o PNG é que cresce.
 function atualizarMarcadorGeral() {
   const ligada = $('lg-legenda').checked;
   const txt = ligada ? textoLegenda($('lg-incluir-nome').checked) : '';
@@ -774,27 +776,16 @@ function atualizarMarcadorGeral() {
     const el = $(id);
     el.hidden = !(txt && ativo);
     if (el.hidden) continue;
-    const overlay = legendaPos === 'overlay';
-    el.classList.toggle('overlay', overlay);
-    if (overlay) ancorarOverlay(el); else el.style.bottom = '';
     el.innerHTML = '';
     const tag = document.createElement('span');
     tag.className = 'tag'; tag.textContent = 'LEGENDA GERAL';
     const dados = document.createElement('b'); dados.textContent = txt;
     const modo = document.createElement('span');
-    modo.textContent = overlay ? '— overlay na base' : '— faixa extra abaixo';
+    modo.textContent = legendaPos === 'overlay'
+      ? `— na base (imagens cedem ${barraGeralH(PANEL_W)}px)`
+      : `— abaixo (PNG cresce ${barraGeralH(PANEL_W)}px)`;
     el.append(tag, dados, modo);
   }
-}
-
-// No PNG o overlay cai no rodapé da IMAGEM, não sob os campos de legenda —
-// então o marcador é ancorado na base do tile mais baixo da grade.
-function ancorarOverlay(el) {
-  const holder = el.parentNode;
-  const tiles = [...holder.querySelectorAll('.tile.filled')];
-  if (!tiles.length) { el.style.bottom = '0px'; return; }
-  const base = Math.max(...tiles.map(t => t.getBoundingClientRect().bottom));
-  el.style.bottom = Math.max(0, Math.round(holder.getBoundingClientRect().bottom - base)) + 'px';
 }
 
 // ---------- prévia da saída ----------
@@ -928,41 +919,49 @@ function composeSingle(im) {
   const rad = ((im.tf && im.tf.rot) || 0) * Math.PI / 180;
   const ac = Math.abs(Math.cos(rad)), as = Math.abs(Math.sin(rad));
   const ew = w * ac + h * as, eh = w * as + h * ac;
-  // Com legenda, a faixa é reservada ANTES de escalar: imagem + faixa juntas
-  // continuam cabendo em PANEL_W × PANEL_H.
+  // As faixas (a da imagem e a do paciente) são reservadas ANTES de escalar:
+  // imagem + faixas juntas continuam cabendo em PANEL_W × PANEL_H.
   const bh = capTexto(im) ? capTileH() : 0;
-  const s = Math.min(PANEL_W / ew, (PANEL_H - bh) / eh);
+  // A faixa geral é proporcional à largura, que aqui não é PANEL_W — estima a
+  // largura final para dimensioná-la (1px de diferença é invisível).
+  const s0 = Math.min(PANEL_W / ew, (PANEL_H - bh) / eh);
+  const reserva = reservaLegendaGeral(Math.round(ew * s0));
+  const s = Math.min(PANEL_W / ew, (PANEL_H - bh - reserva) / eh);
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(ew * s));
-  canvas.height = Math.max(1, Math.round(eh * s)) + bh;
+  canvas.height = Math.max(1, Math.round(eh * s)) + bh + reserva;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   // Mesmo caminho da célula (aplica zoom/pan de im.tf); com zoom=1 preenche igual.
-  drawCellCap(ctx, im, 0, 0, canvas.width, canvas.height, 'contain');
+  // A tira reservada no rodapé fica preta, esperando a faixa geral.
+  drawCellCap(ctx, im, 0, 0, canvas.width, canvas.height - reserva, 'contain');
   return canvas;
 }
 
-// 2 imagens → preenche o canvas do formato ativo, cada uma ocupando metade:
-//   'row' (1×2) → duas células lado a lado (cada uma PANEL_W/2 × PANEL_H).
-//   'col' (2×1) → duas células empilhadas (cada uma PANEL_W × PANEL_H/2).
+// 2 imagens → preenche o canvas do formato ativo, cada uma ocupando metade.
+// As células usam alturaUtil() (PANEL_H menos a reserva da legenda geral), mas o
+// canvas continua com a altura do formato: a tira reservada fica preta embaixo.
+//   'row' (1×2) → duas células lado a lado (cada uma PANEL_W/2 × alturaUtil).
+//   'col' (2×1) → duas células empilhadas (cada uma PANEL_W × alturaUtil/2).
 function composeStrip(imgs, orientation, fit) {
   const canvas = document.createElement('canvas');
   canvas.width = PANEL_W; canvas.height = PANEL_H;   // dimensões do formato ativo
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, PANEL_W, PANEL_H);
-  const halfW = PANEL_W / 2, halfH = PANEL_H / 2;
+  const H = alturaUtil();
+  const halfW = PANEL_W / 2, halfH = H / 2;
   const cells = orientation === 'row'
-    ? [[0, 0, halfW, PANEL_H], [halfW, 0, halfW, PANEL_H]]   // 640×840 cada
-    : [[0, 0, PANEL_W, halfH], [0, halfH, PANEL_W, halfH]];  // 1280×420 cada
+    ? [[0, 0, halfW, H], [halfW, 0, halfW, H]]
+    : [[0, 0, PANEL_W, halfH], [0, halfH, PANEL_W, halfH]];
   imgs.slice(0, 2).forEach((im, i) => drawCellCap(ctx, im, ...cells[i], fit));
   return canvas;
 }
 
 // Proporção (w/h) das células de cada orientação do strip de 2 imagens
 // (dependem do formato ativo: webris → 0.762 / 3.048; square → 0.5 / 2.0).
-function stripRowAR() { return (PANEL_W / 2) / PANEL_H; }  // célula em pé
-function stripColAR() { return PANEL_W / (PANEL_H / 2); }  // célula deitada
+function stripRowAR() { return (PANEL_W / 2) / alturaUtil(); }  // célula em pé
+function stripColAR() { return PANEL_W / (alturaUtil() / 2); }  // célula deitada
 
 // Auto: escolhe a orientação cuja célula combina melhor com a proporção das
 // imagens (menos recorte). Verticais → 1×2 (célula em pé); horizontais → 2×1.
@@ -1016,7 +1015,7 @@ function composeAdaptive(imgs) {
   const n = Math.min(imgs.length, 4);
   if (n === 1) return composeSingle(imgs[0]);
   if (n === 2) return composeStrip(imgs, resolveLayout(imgs), fitMode);
-  const cw = PANEL_W / 2, ch = PANEL_H / 2;   // células do formato ativo
+  const cw = PANEL_W / 2, ch = alturaUtil() / 2;   // células do formato ativo
   const canvas = document.createElement('canvas');
   canvas.width = PANEL_W; canvas.height = PANEL_H;
   const ctx = canvas.getContext('2d');
@@ -1036,10 +1035,11 @@ function composeCompare(left, right, leftLabel, rightLabel) {
   const CAP = capH();
   const colW = PANEL_W / 2;
   const rows = Math.max(left.length, right.length, 1); // 1 ou 2
-  const tileH = Math.floor((PANEL_H - CAP) / rows);
+  const reserva = reservaLegendaGeral(PANEL_W);        // tira preta p/ a legenda geral
+  const tileH = Math.floor((alturaUtil() - CAP) / rows);
   const canvas = document.createElement('canvas');
   canvas.width = PANEL_W;
-  canvas.height = CAP + tileH * rows;
+  canvas.height = CAP + tileH * rows + reserva;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1269,7 +1269,6 @@ function renderCompare() {
   $('cmp-gen-btn').disabled = total === 0;
   $('cmp-clear-btn').disabled = total === 0;
   updateLoadedStat();
-  atualizarDicaLegendaGlobal();
   atualizarMarcadorGeral();
   agendarPreview();
 }
@@ -1344,18 +1343,19 @@ function tileThumb(im) {
 // Geometria da célula onde a imagem vai ser desenhada, em px do PNG e ANTES da
 // faixa de legenda. Base tanto do overlay "Ajustar" quanto da faixa fantasma.
 function celulaPainel() {
+  const H = alturaUtil();                                          // já sem a faixa geral
   const n = images.length;
-  if (n <= 1) return { w: PANEL_W, h: PANEL_H, fit: 'contain' };   // caixa do formato
+  if (n <= 1) return { w: PANEL_W, h: H, fit: 'contain' };         // caixa do formato
   if (n === 2) {
     return resolveLayout(images) === 'row'
-      ? { w: PANEL_W / 2, h: PANEL_H, fit: fitMode }
-      : { w: PANEL_W, h: PANEL_H / 2, fit: fitMode };
+      ? { w: PANEL_W / 2, h: H, fit: fitMode }
+      : { w: PANEL_W, h: H / 2, fit: fitMode };
   }
-  return { w: PANEL_W / 2, h: PANEL_H / 2, fit: 'contain' };       // grade 2×2
+  return { w: PANEL_W / 2, h: H / 2, fit: 'contain' };              // grade 2×2
 }
 function celulaCompare() {
   const rows = Math.max(cmp.left.length, cmp.right.length, 1);
-  return { w: PANEL_W / 2, h: Math.floor((PANEL_H - capH()) / rows), fit: 'contain' };
+  return { w: PANEL_W / 2, h: Math.floor((alturaUtil() - capH()) / rows), fit: 'contain' };
 }
 function celulaDe(im) {
   return mode === 'compare' ? celulaCompare() : celulaPainel();
@@ -1588,14 +1588,14 @@ function desenharFaixaLegenda(ctx, x, y, w, h, txt) {
 }
 
 // Aplica a legenda ao canvas final quando o checkbox está ligado.
-//   overlay → faixa semitransparente na base (mantém as dimensões);
+//   overlay → pinta na tira que a composição já reservou (mantém as dimensões);
 //   strip   → tarja sólida ADICIONADA abaixo (retorna canvas mais alto).
 function aplicarLegenda(canvas, comNome) {
   if (!$('lg-legenda').checked) return canvas;
   const txt = textoLegenda(comNome);
   if (!txt) return canvas;
   const W = canvas.width;
-  const BAR = Math.round(W * 30 / 640);
+  const BAR = barraGeralH(W);
   if (legendaPos === 'strip') {
     const out = document.createElement('canvas');
     out.width = W; out.height = canvas.height + BAR;
@@ -1606,6 +1606,8 @@ function aplicarLegenda(canvas, comNome) {
     desenharFaixaLegenda(ctx, 0, canvas.height, W, BAR, txt);
     return out;
   }
+  // 'overlay': a tira do rodapé já foi reservada na composição (reservaLegendaGeral),
+  // então aqui a faixa é PINTADA no espaço vago — não cobre imagem nem legenda.
   desenharFaixaLegenda(canvas.getContext('2d'), 0, canvas.height - BAR, W, BAR, txt);
   return canvas;
 }
@@ -1617,12 +1619,6 @@ function atualizarLegendaPosUI() {
 }
 function atualizarLegendaPosDisponivel() {
   $('lg-legenda-pos-row').classList.toggle('disabled', !$('lg-legenda').checked);
-}
-// A legenda global em 'overlay' é pintada no rodapé do painel — exatamente onde
-// ficam as faixas das imagens de baixo. Avisa em vez de bloquear.
-function atualizarDicaLegendaGlobal() {
-  $('lg-legenda-conflito').hidden =
-    !($('lg-legenda').checked && legendaPos === 'overlay' && temLegendaPorImagem());
 }
 function lgSavePrefs() {
   try {
@@ -1639,7 +1635,6 @@ function lgLoadPrefs() {
   } catch (_) {}
   atualizarLegendaPosUI();
   atualizarLegendaPosDisponivel();
-  atualizarDicaLegendaGlobal();
   atualizarMarcadorGeral();
 }
 
@@ -1658,12 +1653,12 @@ function lgLoadPrefs() {
     lgSavePrefs(); atualizarMarcadorGeral(); agendarPreview();
   });
   $('lg-legenda').addEventListener('change', () => {
-    lgSavePrefs(); atualizarLegendaPosDisponivel(); atualizarDicaLegendaGlobal();
+    lgSavePrefs(); atualizarLegendaPosDisponivel();
     atualizarMarcadorGeral(); agendarPreview();
   });
   [...$('lg-legenda-pos').querySelectorAll('button')].forEach(b =>
     b.addEventListener('click', () => {
-      legendaPos = b.dataset.pos; atualizarLegendaPosUI(); lgSavePrefs(); atualizarDicaLegendaGlobal();
+      legendaPos = b.dataset.pos; atualizarLegendaPosUI(); lgSavePrefs();
       atualizarMarcadorGeral(); agendarPreview();
     }));
   // As datas do comparativo viram título de coluna no PNG → prévia acompanha.
