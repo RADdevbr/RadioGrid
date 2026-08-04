@@ -79,6 +79,23 @@ axial`, `Fig. 1 — lesão frontal`); texto longo demais é truncado com `…`.
   rodapé do painel e cobre a faixa das imagens de baixo — a interface avisa e
   sugere *"faixa extra abaixo"*.
 
+### Previsão de onde as legendas vão cair
+
+Antes de gerar, o editor mostra onde cada legenda vai parar no PNG:
+
+- **Faixa fantasma no tile** — uma faixa no rodapé de cada imagem, ocupando a
+  mesma fração da altura da célula que a legenda vai ocupar de verdade (muda
+  junto com o formato exportado e com o layout 1×2/2×1). Com texto ela aparece
+  cheia, com o próprio texto; vazia, vira só uma hachura tênue marcando o lugar.
+- **Marcador da legenda geral** — mostra a faixa do paciente logo abaixo da
+  grade quando ela é *"faixa extra abaixo"*, ou **em âmbar por cima da base das
+  imagens** quando é *"overlay na base"*, deixando visível que nesse modo ela
+  cobre a legenda das imagens de baixo.
+- **Prévia da saída** — ao lado do editor, o PNG que vai sair, composto pelo
+  mesmo caminho do botão "Gerar" e apenas reduzido, com o tamanho real anunciado
+  (ex.: `640×500`). É a previsão fiel: mostra recorte, ordem, as faixas por
+  imagem e a faixa geral de uma vez, e acompanha o que você digita.
+
 ### Integração com o Laudo-Guard
 
 O RadioGrid não guarda dados de paciente. Quando a extensão **Laudo-Guard** está
