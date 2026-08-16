@@ -562,6 +562,15 @@ const WEBRIS_CANVAS_W = WEBRIS_W * EXPORT_SCALE; // 1280 — largura do canvas W
 //               Passa por fitForWebRIS (clamp de altura).
 //   'square'  → quadrado clássico 600×600 (renderiza 600×600): mais alto, NÃO
 //               garante a assinatura na mesma página — útil fora do WebRIS.
+//
+// Esta tabela virou REFERÊNCIA de outros apps: o mapa condral do joelho exporta
+// pelos mesmos presets no Laudo-Guard (`shared/mapa_tamanhos.js`), no
+// Laudo-Guard-Plus (`lib/mapa-condral/tamanhos.ts`) e no Lynx
+// (`src/lib/mapa-condral/tamanhos.ts`). Preset novo ou medição refeita aqui tem
+// de descer para os três, senão as telas prometem coisas diferentes sobre a
+// MESMA página do laudo. Lá o 2× é 1280×1000 (a mesma caixa 640×500 dobrada) e
+// não 1280×840: o painel daqui é montagem de fotos e a forma deitada 3:2 é
+// livre; o joelho tem forma própria, e o que dobra é a caixa.
 const EXPORT_FORMATS = {
   webris:  { w: 640,             h: 500,                          scale: 1,            clamp: false, short: 'WebRIS 640×500' },
   sharp2x: { w: WEBRIS_CANVAS_W, h: WEBRIS_MAX_H * EXPORT_SCALE,  scale: EXPORT_SCALE, clamp: true,  short: 'Nítido 1280×840' },
